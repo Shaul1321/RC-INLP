@@ -32,7 +32,7 @@ if __name__ == '__main__':
                     default="cuda",
                     help='cpu/cuda')
     parser.add_argument('--layer', dest='layer', type=int,
-                    default=-1,
+                    default = 9,
                     help='layer to take')
 
     args = parser.parse_args()
@@ -42,5 +42,5 @@ if __name__ == '__main__':
         data = pickle.load(f)
 
     data_with_states = collect_bert_states(model, data, [args.layer], False)
-    with open("../data/data_with_states.pickle", "wb") as f:
+    with open("../data/data_with_states.layer={}.pickle".format(args.layer), "wb") as f:
         pickle.dump(data_with_states, f)
