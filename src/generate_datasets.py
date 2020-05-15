@@ -85,19 +85,21 @@ if __name__ == '__main__':
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--input-path', dest='input_path', type=str,
-                        default="../data/data_with_states.layer=3.pickle",
+                        default="../data/data_with_states.layer=6.masked=True.pickle",
                         help='input_path')
     parser.add_argument('--inlp-iterations', dest='inlp_iterations', type=int,
-                        default=25,
+                        default=32,
                         help='number of INLP iterations to perform')
     parser.add_argument('--sentences-group', dest='sentences_group', type=str,
-                        default='5000t',
+                        default='5000a',
                         help='5000a/5000t')
 
     args = parser.parse_args()
-    layer = args.input_path.split(".")[-2]
+    layer = args.input_path.split(".")[-3]
+    masked = args.input_path.split(".")[-2]
+
     sent_type2data = get_train_dev_test(args.sentences_group, args.input_path)
 
-    with open("../data/datasets.{}.layer={}.pickle".format(args.sentences_group, layer), "wb") as f:
+    with open("../data/datasets.{}.{}.{}.pickle".format(args.sentences_group, layer, masked), "wb") as f:
 
         pickle.dump(sent_type2data, f)

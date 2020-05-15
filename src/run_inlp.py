@@ -58,23 +58,24 @@ if __name__ == '__main__':
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--train-dev-path', dest='train_dev_path', type=str,
-                        default="../data/datasets.5000a.layer=layer=6.pickle",
+                        default="../data/datasets.5000a.layer=6.masked=True.pickle",
                         help='input_path')
     parser.add_argument('--classifier', dest='classifier', type=str,
                         default="svm",
                         help='sgd/svm')
     parser.add_argument('--num-classifiers', dest='num_classifiers', type=int,
-                        default=16,
+                        default=64,
                         help='number of inlp classifiers')
                             
     args = parser.parse_args()
-    layer = "layer="+str(args.train_dev_path.split(".")[-2].split("=")[-1])
+    layer = "layer="+str(args.train_dev_path.split(".")[-3].split("=")[-1])
+    masked = "masked="+str(args.train_dev_path.split(".")[-2].split("=")[-1])
+
     if layer == "layer=-1": layer = "layer=12"
-    print(layer)
     
     train_dev_datasets = load_data(args.train_dev_path)
 
     type2proj = run_inlp(train_dev_datasets, args.classifier, args.num_classifiers)
-    with open("../data/type2P.{}.iters={}.classifier={}.pickle".format(layer, args.num_classifiers, args.classifier), "wb") as f:
+    with open("../data/type2P.{}.iters={}.classifier={}.{}.pickle".format(layer, args.num_classifiers, args.classifier, masked), "wb") as f:
     
         pickle.dump(type2proj, f)
