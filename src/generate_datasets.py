@@ -85,13 +85,13 @@ if __name__ == '__main__':
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--input-path', dest='input_path', type=str,
-                        default="../data/data_with_states.layer=6.masked=True.pickle",
+                        default="../data/data_with_states.layer=9.masked=True.pickle",
                         help='input_path')
     parser.add_argument('--inlp-iterations', dest='inlp_iterations', type=int,
                         default=32,
                         help='number of INLP iterations to perform')
     parser.add_argument('--sentences-group', dest='sentences_group', type=str,
-                        default='5000a',
+                        default='5000t',
                         help='5000a/5000t')
 
     args = parser.parse_args()

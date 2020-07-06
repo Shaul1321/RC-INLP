@@ -55,13 +55,13 @@ if __name__ == '__main__':
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--P-path', dest='P_path', type=str,
-                        default="../data/type2P.layer=6.iters=64.classifier=svm.masked=True.pickle",
+                        default="../data/type2P.layer=12.iters=64.classifier=svm.masked=True.pickle",
                         help='input_path')
     parser.add_argument('--agreement-file-type', dest='agreement_file_type', type=str,
                         default="subj_rel",
                         help='subj_rel/obj_rel_across_inanim/simple_agrmt etc')
     parser.add_argument('--layer', dest='layer', type=int,
-                        default=6,
+                        default=12,
                         help='bert layer')
     parser.add_argument('--device', dest='device', type=str,
                         default="cuda",
@@ -100,7 +100,7 @@ if __name__ == '__main__':
             results[filename][P_type] =r
             
     
-    with open("../data/agreement_results.32.pickle", "wb") as f:
+    with open("../data/agreement_results.32.layer={}.pickle".format(args.layer), "wb") as f:
         pickle.dump(results, f)
                 
     """ 

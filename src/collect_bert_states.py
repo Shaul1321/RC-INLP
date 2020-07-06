@@ -32,19 +32,29 @@ if __name__ == '__main__':
                     default="cuda",
                     help='cpu/cuda')
     parser.add_argument('--layer', dest='layer', type=int,
-                    default = 6,
+                    default = 9,
                     help='layer to take')
-    parser.add_argument('--mask', dest='mask', type=bool,
-                    default = True,
+    parser.add_argument('--mask', dest='mask', type=int,
+                    default =1,
                     help='whether to mask the token over which the state is collected')
-                    
+    parser.add_argument('--random', dest='random', type=int,
+                    default =0,
+                    help='whether to use randomly initialized bert')                    
+    
     args = parser.parse_args()
-    model = bert.BertEncoder(args.device)
+    args.random = True if args.random == 1 else False
+    layer = args.layer
+    if args.random:
+        args.layer = str(args.layer) + "-random"
+    print(args.mask)
+    print(args.layer)
+    print(args.random)
+    model = bert.BertEncoder(args.device, random = args.random)
 
     with open("../data/data.pickle", "rb") as f:
         data = pickle.load(f)
 
-    mask_prob = 1.0 if args.mask else 0.0
-    data_with_states = collect_bert_states(model, data, [args.layer], False, mask_prob)
+    mask_prob = args.mask
+    data_with_states = collect_bert_states(model, data, [layer], False, mask_prob)
     with open("../data/data_with_states.layer={}.masked={}.pickle".format(args.layer, args.mask), "wb") as f:
         pickle.dump(data_with_states, f)

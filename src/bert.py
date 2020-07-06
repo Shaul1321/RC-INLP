@@ -9,16 +9,19 @@ import tqdm
 
 class BertEncoder(object):
 
-    def __init__(self, device='cpu', model="bert"):
+    def __init__(self, device='cpu', model="bert", random=False):
 
         # config = BertConfig.from_pretrained("bert-large-uncased-whole-word-masking", output_hidden_states=True)
         # self.tokenizer = BertTokenizer.from_pretrained('bert-large-uncased-whole-word-masking')
         # self.model = BertForMaskedLM.from_pretrained('bert-large-uncased-whole-word-masking', config = config)
 
         config = BertConfig.from_pretrained("bert-base-uncased", output_hidden_states=True)
+        
         self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-        self.model = BertForMaskedLM.from_pretrained('bert-base-uncased', config=config)
-
+        if not random:
+            self.model = BertForMaskedLM.from_pretrained('bert-base-uncased', config=config)
+        else:
+            self.model = BertForMaskedLM(config)
         # config = AlbertConfig.from_pretrained("albert-xlarge-v2", output_hidden_states=True)
         # self.tokenizer = AlbertTokenizer.from_pretrained("albert-xlarge-v2")
         # self.model = AlbertModel.from_pretrained("albert-xlarge-v2", config = config)

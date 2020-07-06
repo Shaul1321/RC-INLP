@@ -64,6 +64,9 @@ def plot(labels, results, layer, classifier, test_group):
     
     df_cm = pd.DataFrame(results, index = labels,
                   columns = labels)
+    print(df_cm)
+    exit()
+    
     plt.figure(figsize = (10,7))
     g = sn.heatmap(df_cm, annot=True,  annot_kws={"fontsize":16})
     sn.set(font_scale=5.0)
@@ -77,19 +80,19 @@ if __name__ == '__main__':
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--train-dev-path', dest='train_dev_path', type=str,
-                        default="../data/datasets.5000a.layer=layer=-1.pickle",
+                        default="../data/datasets.5000a.layer=12.masked=True.pickle",
                         help='input_path')
     parser.add_argument('--test-path', dest='test_path', type=str,
-                        default="../data/datasets.5000t.layer=layer=-1.pickle",
+                        default="../data/datasets.5000a.layer=12.masked=True.pickle",
                         help='input_path for the non-lexically-overlapped datta')
     parser.add_argument('--classifier', dest='classifier', type=str,
                         default="svm",
                         help='sgd/svm')
                             
     args = parser.parse_args()
-    test_group = args.test_path.split(".")[-3]
+    test_group = args.test_path.split(".")[-4]
     print(test_group)
-    layer = "layer="+str(args.train_dev_path.split(".")[-2].split("=")[-1])
+    layer = "layer="+str(args.train_dev_path.split(".")[-3].split("=")[-1])
     if layer == "layer=-1": layer = "layer=12"
     print(layer)
     

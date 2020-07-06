@@ -30,10 +30,10 @@ def run_inlp(train_dev_datasets, classifier, num_classifiers):
 
         if classifier == "sgd":
             clf = sklearn.linear_model.SGDClassifier
-            params = {"tol":1e-6, "max_iter": 2500}
+            params = {"max_iter": 1500}
         elif classifier == "svm":
              clf = sklearn.svm.LinearSVC
-             params = {"tol":1e-6, "max_iter": 7000}
+             params = {"max_iter": 3000}
                         
         P, rowspace_projections, Ws = debias.get_debiasing_projection(clf, params, num_classifiers, 768, True,
         0, train_x, train_y, dev_x, dev_y, by_class = False, Y_train_main = False, Y_dev_main = False, dropout_rate = 0)
@@ -58,13 +58,13 @@ if __name__ == '__main__':
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--train-dev-path', dest='train_dev_path', type=str,
-                        default="../data/datasets.5000a.layer=6.masked=True.pickle",
+                        default="../data/datasets.5000a.layer=6.masked=False.pickle",
                         help='input_path')
     parser.add_argument('--classifier', dest='classifier', type=str,
                         default="svm",
                         help='sgd/svm')
     parser.add_argument('--num-classifiers', dest='num_classifiers', type=int,
-                        default=64,
+                        default=8,
                         help='number of inlp classifiers')
                             
     args = parser.parse_args()
