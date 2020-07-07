@@ -49,10 +49,13 @@ def get_train_dev_test(sentences_group: str, input_path: str):
 
     positive_examples = [d for d in all_data if d["sentences_set"] == sentences_group]
     negative_examples = [d for d in all_data if d["sentences_set"] == sentences_group]
-
+    
     # remove duplicates
 
-    negative_examples = remove_duplicates(negative_examples)
+    #negative_examples = remove_duplicates(negative_examples)
+    #print(sentences_group, len(positive_examples)/len(negative_examples))
+    
+    print("========================================================================")
 
     # collect exampler per type
 
@@ -60,7 +63,15 @@ def get_train_dev_test(sentences_group: str, input_path: str):
         neg_sent_type = pos2neg_fnames[pos_sent_type]
         positive_examples_relevant = [d for d in positive_examples if d["sent_type"] == pos_sent_type]
         negative_examples_relevant = [d for d in negative_examples if d["sent_type"] == neg_sent_type]
-        all_relevant = positive_examples_relevant + negative_examples_relevant
+        all = positive_examples_relevant + negative_examples_relevant
+        pos, neg = [d for d in all if d["label"] == 1], [d for d in all if d["label"] == 0]
+        
+        
+        m = min(len(pos), len(neg)) # ensure equal number of pos and neg examples
+        pos, neg = pos[:m], neg[:m]
+        
+        #print(pos_sent_type, neg_sent_type, len(positive_examples_relevant), len(negative_examples_relevant),  len(positive_examples_relevant)/len(negative_examples_relevant))
+        all_relevant = pos + neg
 
         random.seed(0)
         random.shuffle(all_relevant)

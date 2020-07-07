@@ -40,7 +40,10 @@ if __name__ == '__main__':
     parser.add_argument('--random', dest='random', type=int,
                     default =0,
                     help='whether to use randomly initialized bert')                    
-    
+    parser.add_argument('--label', dest='label', type=str,
+                    default ="",
+                    help='label string to concatenate to layer name')
+                        
     args = parser.parse_args()
     args.random = True if args.random == 1 else False
     layer = args.layer
@@ -56,5 +59,6 @@ if __name__ == '__main__':
 
     mask_prob = args.mask
     data_with_states = collect_bert_states(model, data, [layer], False, mask_prob)
-    with open("../data/data_with_states.layer={}.masked={}.pickle".format(args.layer, args.mask), "wb") as f:
+    masked_str = "True" if args.mask == 1 else "False"
+    with open("../data/data_with_states.layer={}.masked={}.pickle".format(str(args.layer) + args.label, masked_str), "wb") as f:
         pickle.dump(data_with_states, f)

@@ -80,10 +80,10 @@ if __name__ == '__main__':
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--train-dev-path', dest='train_dev_path', type=str,
-                        default="../data/datasets.5000a.layer=12.masked=True.pickle",
+                        default="../data/datasets.5000a.layer=6.masked=True.pickle",
                         help='input_path')
     parser.add_argument('--test-path', dest='test_path', type=str,
-                        default="../data/datasets.5000a.layer=12.masked=True.pickle",
+                        default="../data/datasets.5000a.layer=6.masked=True.pickle",
                         help='input_path for the non-lexically-overlapped datta')
     parser.add_argument('--classifier', dest='classifier', type=str,
                         default="svm",

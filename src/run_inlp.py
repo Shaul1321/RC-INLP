@@ -19,27 +19,37 @@ def load_data(path):
 
         return pickle.load(f)
 
-def run_inlp(train_dev_datasets, classifier, num_classifiers):
+def run_inlp(train_dev_datasets, classifier, num_classifiers, run_on_all):
 
     type2proj = {}
 
+    print("Keys: {}".format(train_dev_datasets.keys()))
+    if classifier == "sgd":
+            clf = sklearn.linear_model.SGDClassifier
+            params = {"max_iter": 25000, "early_stopping": True, "random_state": 0, "n_jobs": 8}
+    elif classifier == "svm":
+            clf = sklearn.svm.LinearSVC
+            params = {"max_iter": 3000}
+                    
+    # individual types of RCs
+    
     for positive_type in tqdm.tqdm(train_dev_datasets.keys()):
 
-        train_x, train_y = train_dev_datasets[positive_type]["train"]
-        dev_x, dev_y = train_dev_datasets[positive_type]["dev"]
-
-        if classifier == "sgd":
-            clf = sklearn.linear_model.SGDClassifier
-            params = {"max_iter": 1500}
-        elif classifier == "svm":
-             clf = sklearn.svm.LinearSVC
-             params = {"max_iter": 3000}
-                        
-        P, rowspace_projections, Ws = debias.get_debiasing_projection(clf, params, num_classifiers, 768, True,
-        0, train_x, train_y, dev_x, dev_y, by_class = False, Y_train_main = False, Y_dev_main = False, dropout_rate = 0)
-        
-        type2proj[positive_type] = P
+            train_x, train_y = train_dev_datasets[positive_type]["train"]
+            dev_x, dev_y = train_dev_datasets[positive_type]["dev"]
+            P, rowspace_projections, Ws = debias.get_debiasing_projection(clf, params, num_classifiers, 768, True,
+            0, train_x, train_y, dev_x, dev_y, by_class = False, Y_train_main = False, Y_dev_main = False, dropout_rate = 0)      
+            type2proj[positive_type] = P
     
+    # all RCs
+    
+    train_x, train_y = np.concatenate([train_dev_datasets[positive_type]["train"][0] for positive_type in train_dev_datasets.keys()], axis = 0), np.concatenate([train_dev_datasets[positive_type]["train"][1] for positive_type in train_dev_datasets.keys()], axis = 0)
+    dev_x, dev_y = np.concatenate([train_dev_datasets[positive_type]["dev"][0] for positive_type in train_dev_datasets.keys()], axis = 0), np.concatenate([train_dev_datasets[positive_type]["dev"][1] for positive_type in train_dev_datasets.keys()], axis = 0)
+            
+    P, rowspace_projections, Ws = debias.get_debiasing_projection(clf, params, num_classifiers, 768, True,
+    0, train_x, train_y, dev_x, dev_y, by_class = False, Y_train_main = False, Y_dev_main = False, dropout_rate = 0)
+    type2proj["all"] = P                
+                     
     return type2proj
     
 def plot(labels, results, layer):
@@ -66,8 +76,13 @@ if __name__ == '__main__':
     parser.add_argument('--num-classifiers', dest='num_classifiers', type=int,
                         default=8,
                         help='number of inlp classifiers')
-                            
+    parser.add_argument('--all', dest='all', type=int,
+                        default=0,
+                        help='wehther to run on all RC vs. non-RC')
+                                                    
     args = parser.parse_args()
+    run_on_all = args.all == 1
+    
     layer = "layer="+str(args.train_dev_path.split(".")[-3].split("=")[-1])
     masked = "masked="+str(args.train_dev_path.split(".")[-2].split("=")[-1])
 
@@ -75,7 +90,7 @@ if __name__ == '__main__':
     
     train_dev_datasets = load_data(args.train_dev_path)
 
-    type2proj = run_inlp(train_dev_datasets, args.classifier, args.num_classifiers)
+    type2proj = run_inlp(train_dev_datasets, args.classifier, args.num_classifiers, run_on_all)
     with open("../data/type2P.{}.iters={}.classifier={}.{}.pickle".format(layer, args.num_classifiers, args.classifier, masked), "wb") as f:
     
         pickle.dump(type2proj, f)
