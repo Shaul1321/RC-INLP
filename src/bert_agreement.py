@@ -95,9 +95,12 @@ class BertEncoder(object):
 
         return (bert_tokens, orig_to_tok_map)
 
-    def encode(self, sentence: str, mask_index: int, layer: int, P: np.ndarray):
+    def encode(self, sentence: str, mask_index: int, layer: int, P: np.ndarray, P2: np.ndarray):
 
         tokenized_text, orig2tok = self.tokenize(sentence.split(" "))
+        #print(tokenized_text, mask_index, orig2tok)
+        #exit()
+        
         mask_idx_bert = orig2tok[mask_index]
         tokenized_text[mask_idx_bert] = "[MASK]"
 
@@ -107,14 +110,18 @@ class BertEncoder(object):
         with torch.no_grad():
             outputs = self.model(tokens_tensor)
         rep_state = [outputs[1][i][0] for i in range(len(outputs[1]))]
-
+        
         states = rep_state[layer]
         states_projected = (states @ P).float()
+        if P2 is not None:
+            P_R = torch.eye(768).cuda() - P2
+            states_projected -= 2 * states @ P_R
+             
         next_layers = forward_from_specific_layer(self.model, layer, states_projected.unsqueeze(0)).squeeze(1)
         last_after_batchnorm = next_layers[-1]
         vec = last_after_batchnorm[mask_idx_bert]
 
-        top_k = 3000
+        top_k = 1500
         logits = np.dot(self.out_embed, vec)
         probs = torch.nn.functional.softmax(torch.tensor(logits), dim=-1)
         top_k_weights, top_k_indices = torch.topk(probs, top_k, sorted=True)
@@ -123,29 +130,32 @@ class BertEncoder(object):
 
         for i, pred_idx in enumerate(top_k_indices):
             predicted_token = self.tokenizer.convert_ids_to_tokens([pred_idx])[0]
-
+            #print(predicted_token)
             token_weight = top_k_weights[i]
             predictions_dict[predicted_token]["prob"] = token_weight.detach().cpu().numpy().item()
             predictions_dict[predicted_token]["rank"] = i
 
+        w = sentence.split(" ")[mask_index]
+        #print(w, predictions_dict[w], "applying projection?", P2 is not None)
+        #print("----------------------------")
         return predictions_dict, vec, top_words, orig2tok, tokenized_text
 
 
-def collect_bert_states(bert, data: List[Tuple], layer=-1, P=None):
+def collect_bert_states(bert, data: List[Tuple], layer=-1, P=None, P2=None):
     data_with_states = []
 
-    for i, d in tqdm.tqdm(enumerate(data), total=len(data)):
+    for i, d in enumerate(data):
 
-        sent = d["sent"] + "."
+        sent = d["sent"]# + " ."
         word_position = d["verb_index"]
         correct, wrong = d["correct_verb"], d["wrong_verb"]
-
+        
         predictions_dict, vec, top_words, orig2tok, bert_tokens = bert.encode(sent, mask_index=word_position,
-                                                                              layer=layer, P=P)
+                                                                              layer=layer, P=P, P2=P2)
 
         dict_data = d.copy()
         dict_data["vec"] = vec
-        dict_data["top_preds"] = top_words
+        dict_data["top_preds"] = top_words[:10]
 
         if correct in predictions_dict:
             dict_data["correct_word_prob"] = predictions_dict[correct]
@@ -156,6 +166,8 @@ def collect_bert_states(bert, data: List[Tuple], layer=-1, P=None):
         else:
             dict_data["wrong_word_prob"] = None
 
+        #print(dict_data)
+        #print("------------------")
         data_with_states.append(dict_data)
 
     return data_with_states

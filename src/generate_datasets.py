@@ -16,14 +16,17 @@ pos2neg_fnames = {"src": "scont", "orc": "ocont", "orrc": "ocont", "prc": "ocont
 
 
 def construct_dataset(examples: dict):
-    x, y = [], []
+    x, y, is_rc = [], [], []
     for d in examples:
         x.append(d["vec"])
         y.append(d["label"])
+        is_rc.append(d["is_rc"])
 
     x = np.array(x)
     y = np.array(y)
-    return x, y
+    is_rc = np.array(is_rc)
+    
+    return x, y, is_rc
 
 
 def remove_duplicates(examples: dict):
@@ -72,21 +75,39 @@ def get_train_dev_test(sentences_group: str, input_path: str):
         
         #print(pos_sent_type, neg_sent_type, len(positive_examples_relevant), len(negative_examples_relevant),  len(positive_examples_relevant)/len(negative_examples_relevant))
         all_relevant = pos + neg
-
+       
+        for k,d in enumerate(all_relevant):
+            is_rc = "and" not in d["text"]
+            all_relevant[k]["is_rc"] = is_rc   
+        
         random.seed(0)
         random.shuffle(all_relevant)
 
         train_len = int(0.8 * len(all_relevant))
         train_examples_relevant, dev_examples_relevant = all_relevant[:train_len], all_relevant[train_len:]
 
-        train_x, train_y = construct_dataset(train_examples_relevant)
-        dev_x, dev_y = construct_dataset(dev_examples_relevant)
+        train_x, train_y, train_is_rc = construct_dataset(train_examples_relevant)
+        dev_x, dev_y, dev_is_rc = construct_dataset(dev_examples_relevant)
 
-        sent_type2data[pos_sent_type]["train"] = (train_x, train_y)
-        sent_type2data[pos_sent_type]["dev"] = (dev_x, dev_y)
+        sent_type2data[pos_sent_type]["train"] = (train_x, train_y, train_is_rc)
+        sent_type2data[pos_sent_type]["dev"] = (dev_x, dev_y, dev_is_rc)
         # sent_type2data[pos_sent_type]["test"] = (test_x, test_y)
         print(pos_sent_type, neg_sent_type, train_x.shape, dev_x.shape, dev_y.sum() / len(dev_y))
 
+
+    # concatenate to also have data over all rc types
+    
+    train_x = np.concatenate([sent_type2data[positive_type]["train"][0] for positive_type in sent_type2data.keys()], axis = 0)
+    train_y = np.concatenate([sent_type2data[positive_type]["train"][1] for positive_type in sent_type2data.keys()], axis = 0)
+    train_is_rc = np.concatenate([sent_type2data[positive_type]["train"][2] for positive_type in sent_type2data.keys()], axis = 0)
+
+    dev_x = np.concatenate([sent_type2data[positive_type]["dev"][0] for positive_type in sent_type2data.keys()], axis = 0)
+    dev_y = np.concatenate([sent_type2data[positive_type]["dev"][1] for positive_type in sent_type2data.keys()], axis = 0)
+    dev_is_rc = np.concatenate([sent_type2data[positive_type]["dev"][2] for positive_type in sent_type2data.keys()], axis = 0)
+    
+    sent_type2data["all"]["train"] = (train_x, train_y, train_is_rc)
+    sent_type2data["all"]["dev"] = (dev_x, dev_y, dev_is_rc)
+    
     return sent_type2data
 
 
