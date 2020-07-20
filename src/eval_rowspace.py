@@ -5,11 +5,15 @@ from sklearn.manifold import TSNE
 import seaborn as sn
 import pandas as pd
 from collections import defaultdict
+import argparse
+import sys
+sys.path.append("inlp/")
+from inlp import debias
 
 layers = ["0", "3", "6", "6-random0", "6-random1", "6-random2", "6-random3", "6-random4", "9", "12"]
 #layers = ["0", "3"]
 
-def load_data():
+def load_data(classifier, iters):
 
  layer2data = defaultdict(dict)
  layer2projs = defaultdict(dict)
@@ -27,16 +31,12 @@ def load_data():
         with open(fname2, "rb") as f:
             train_dev_nonlex = pickle.load(f)
 
-        projs_path = "../data/type2P.layer={}.iters=16.classifier=sgd.masked={}.pickle".format(layer, masked)
+        projs_path = "../data/type2P.layer={}.iters={}.classifier={}.masked={}.pickle".format(layer, iters, classifier, masked)
         with open(projs_path, "rb") as f:
             type2proj = pickle.load(f)
     
         layer2projs[layer] = type2proj
-        
-        comps = projs_path.split(".")
-        iters = comps[-4]
-        
-        
+                
         dev_x_lex, dev_y_lex = np.concatenate([train_dev_lex[positive_type]["dev"][0] for positive_type in train_dev_lex.keys()], axis = 0), np.concatenate([train_dev_lex[positive_type]["dev"][1] for positive_type in train_dev_lex.keys()], axis = 0)
         dev_type_lex = []
         for rc_type in train_dev_lex.keys():
@@ -68,14 +68,13 @@ def load_data():
         
         print(dev_x_nonlex.shape[0], dev_x_lex.shape[0])
 
-        
  return layer2data, layer2projs
  
  
 
-def collect_vecs():
+def collect_vecs(classifier, iters, do_random_projection):
 
-    layer2data, layer2projs = load_data()
+    layer2data, layer2projs = load_data(classifier, iters)
     
     vecs_lex, vecs_rowspace, labels = [],[], []
     vecs_rowspace_nonlex = []
@@ -93,7 +92,13 @@ def collect_vecs():
         
         for rc_type in ["src", "orc", "orrc", "prc", "prrc", "all"]:
         
-            P_rowspace = np.eye(768) - layer2projs[layer][rc_type]
+            if do_random_projection:
+                w = np.random.rand(10, 768) - 0.5
+                P_rowspace = debias.get_rowspace_projection(w)
+                assert np.allclose(P_rowspace.dot(P_rowspace) - P_rowspace, 0)
+                
+            else:
+                P_rowspace = np.eye(768) - layer2projs[layer][rc_type]
             
             lex_x, lex_y, lex_type = layer2data[layer]["lex"]
             nonlex_x, nonlex_y, nonlex_type = layer2data[layer]["nonlex"]
@@ -118,7 +123,7 @@ def collect_vecs():
       
 
 
-def calc_sims(layer2ttype2vecs_rowspace, layer2type2vecs_rowspace_nonlex):
+def calc_sims(layer2ttype2vecs_rowspace, layer2type2vecs_rowspace_nonlex, classifier, iters):
 
     
     type2ind = {d:i for i,d in enumerate(layer2type2vecs_rowspace_nonlex["0"].keys())}
@@ -132,7 +137,7 @@ def calc_sims(layer2ttype2vecs_rowspace, layer2type2vecs_rowspace_nonlex):
     
         from sklearn.metrics.pairwise import cosine_similarity
 
-        for key, vecs in type2vecs_rowspace.items():
+        for key, vecs in type2vecs_rowspace_nonlex.items(): #type2vecs_rowspace.items():
             for key2, vecs2 in type2vecs_rowspace_nonlex.items():
 
         
@@ -147,9 +152,35 @@ def calc_sims(layer2ttype2vecs_rowspace, layer2type2vecs_rowspace_nonlex):
         print("Layer {}".format(layer))
         print(df)
         print("========================================================")
-            
-layer2ttype2vecs_rowspace, layer2type2vecs_rowspace_nonlex = collect_vecs()        
-calc_sims(layer2ttype2vecs_rowspace, layer2type2vecs_rowspace_nonlex)   
+
+        plt.figure(figsize = (10,7))
+        sn.heatmap(df, annot=True)
+        plt.title("Cosine similarity in RC subspace between various RCs. {}. classifier: {}. {}".format(layer,classifier, iters))
+        #plt.show()
+        plt.savefig("../results/plots/rowspace-similarity.layer={}.classifier={}.iters={}.random_projection={}.png".format(layer, classifier, iters, do_random_projection), dpi=200)
+
+
+
+
+
+
+
+
+
+
+parser = argparse.ArgumentParser(description='test influence of INLP on agreement prediction',
+formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+parser.add_argument('--classifier', dest='classifier', type=str,
+                        default="sgd-perceptron")
+parser.add_argument('--iters', dest='iters', type=int,
+                        default=16)                    
+parser.add_argument('--random-projection', dest='random_projection', type=int,
+                        default=0)                                                                               
+args = parser.parse_args()
+do_random_projection = args.random_projection == 1            
+layer2ttype2vecs_rowspace, layer2type2vecs_rowspace_nonlex = collect_vecs(args.classifier, args.iters, do_random_projection)        
+calc_sims(layer2ttype2vecs_rowspace, layer2type2vecs_rowspace_nonlex, args.classifier, args.iters)   
     
     
     

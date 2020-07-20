@@ -24,31 +24,51 @@ def run_inlp(train_dev_datasets, classifier, num_classifiers, run_on_all):
     type2proj = {}
 
     print("Keys: {}".format(train_dev_datasets.keys()))
-    if classifier == "sgd":
+    alpha = 1e-3
+    early_stopping = True
+    
+    
+    if classifier == "sgd-log":
             clf = sklearn.linear_model.SGDClassifier
-            params = {"max_iter": 25000, "early_stopping": True, "random_state": 0, "n_jobs": 8}
+            params = {"max_iter": 3000, "early_stopping": early_stopping, "random_state": 0, "n_jobs": 8, "loss": "log", "fit_intercept": False, "alpha": alpha}
+            
+    if classifier == "sgd-hinge":
+            clf = sklearn.linear_model.SGDClassifier
+            #params = {"early_stopping": early_stopping, "random_state": 1, "n_jobs": 8, "loss": "hinge", "alpha": alpha}
+            params = {"max_iter": 2000, "early_stopping": early_stopping, "random_state": 1, "n_jobs": 8, "fit_intercept": False}
+                        
+    if classifier == "sgd-perceptron":
+            clf = sklearn.linear_model.SGDClassifier
+            params = {"early_stopping": early_stopping, "random_state": 0, "n_jobs": 8, "loss": "perceptron", "alpha": alpha}
+            
     elif classifier == "svm":
             clf = sklearn.svm.LinearSVC
-            params = {"max_iter": 3000}
+            params = {"max_iter": 1000, "dual": False, "random_state": 0}
                     
     # individual types of RCs
     
     for positive_type in tqdm.tqdm(train_dev_datasets.keys()):
 
-            train_x, train_y = train_dev_datasets[positive_type]["train"]
-            dev_x, dev_y = train_dev_datasets[positive_type]["dev"]
-            P, rowspace_projections, Ws = debias.get_debiasing_projection(clf, params, num_classifiers, 768, True,
-            0, train_x, train_y, dev_x, dev_y, by_class = False, Y_train_main = False, Y_dev_main = False, dropout_rate = 0)      
+            train_x, train_y, train_is_rc = train_dev_datasets[positive_type]["train"]
+            dev_x, dev_y, dev_is_rc = train_dev_datasets[positive_type]["dev"]
+            P, rowspace_projections, Ws, accs = debias.get_debiasing_projection(clf, params, num_classifiers, 768, True,
+            0, train_x, train_y, dev_x, dev_y, by_class = False, Y_train_main = False, Y_dev_main = False, dropout_rate = 0)
+            print("norms:", [np.linalg.norm(w) for w in Ws])
+            print("accs:", accs)
+            #print("orthogonality test:\n", np.array(Ws).squeeze(1).dot(np.array(Ws).squeeze(1).T))
+            print("==============================================================")
+            
             type2proj[positive_type] = P
     
     # all RCs
-    
+    """
     train_x, train_y = np.concatenate([train_dev_datasets[positive_type]["train"][0] for positive_type in train_dev_datasets.keys()], axis = 0), np.concatenate([train_dev_datasets[positive_type]["train"][1] for positive_type in train_dev_datasets.keys()], axis = 0)
     dev_x, dev_y = np.concatenate([train_dev_datasets[positive_type]["dev"][0] for positive_type in train_dev_datasets.keys()], axis = 0), np.concatenate([train_dev_datasets[positive_type]["dev"][1] for positive_type in train_dev_datasets.keys()], axis = 0)
             
     P, rowspace_projections, Ws = debias.get_debiasing_projection(clf, params, num_classifiers, 768, True,
     0, train_x, train_y, dev_x, dev_y, by_class = False, Y_train_main = False, Y_dev_main = False, dropout_rate = 0)
     type2proj["all"] = P                
+    """
                      
     return type2proj
     
@@ -89,7 +109,7 @@ if __name__ == '__main__':
     if layer == "layer=-1": layer = "layer=12"
     
     train_dev_datasets = load_data(args.train_dev_path)
-
+    print(layer)
     type2proj = run_inlp(train_dev_datasets, args.classifier, args.num_classifiers, run_on_all)
     with open("../data/type2P.{}.iters={}.classifier={}.{}.pickle".format(layer, args.num_classifiers, args.classifier, masked), "wb") as f:
     

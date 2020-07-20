@@ -17,12 +17,17 @@ def load_data(path):
         return pickle.load(f)
 
 def train_classifiers(train_dev_datasets, test_datasets, classifier, num_clfs = 1, accuracy = True, calc_recall = False):
-
+    early_stopping = True
+    alpha = 1e-3
+    
     if classifier == "svm":
         clf_class = sklearn.svm.LinearSVC
+    elif classifier == "sgd-log":
+        clf_class = sklearn.linear_model.SGDClassifier
+        params = {"max_iter": 3000, "early_stopping": early_stopping, "random_state": 0, "n_jobs": 8, "loss": "log", "fit_intercept": False, "alpha": alpha}
     elif classifier == "sgd":
         clf_class = sklearn.linear_model.SGDClassifier
-    
+        
     results = np.zeros((len(train_dev_datasets), len(train_dev_datasets)))
     type2ind = {d:i for i,d in enumerate(train_dev_datasets.keys())}
     ind2type = {i:d for d,i in type2ind.items()}
@@ -35,7 +40,7 @@ def train_classifiers(train_dev_datasets, test_datasets, classifier, num_clfs = 
         accs = []
         accs_nolexoverlap = defaultdict(list)
         for i in range(num_clfs):
-            clf = clf_class(dual=False, random_state=0)
+            clf = clf_class(**params)
             clf.fit(train_x, train_y)
             score_dev = clf.score(dev_x, dev_y)
             accs.append(score_dev)

@@ -15,7 +15,7 @@ def load_data(agreement_file_type, only_attractors = False, only_not_attractors 
     
     data = []
     i = 0
-    print("=====================================================")
+    
     print(agreement_file_type)
     print("keys:", raw_data.keys())
     
@@ -34,6 +34,7 @@ def load_data(agreement_file_type, only_attractors = False, only_not_attractors 
                     continue
                 
         examples = raw_data[key]
+        
         for correct, wrong in examples:
             i += 1
             correct += " ."
@@ -44,8 +45,8 @@ def load_data(agreement_file_type, only_attractors = False, only_not_attractors 
             data.append({"sent": correct, "verb_index": len(correct_lst) - 3, "correct_verb": correct_verb,
                      "wrong_verb": wrong_verb}) #note: verb_index is actually verb_index + 1 (handling the period) 
                      
-            #if i == 1:
-            #    print(data)
+            if i == 1:
+                print(data[0]["sent"], data[0]["correct_verb"])
             
     return data
 
@@ -81,19 +82,12 @@ if __name__ == '__main__':
         description='test influence of INLP on agreement prediction',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument('--P-path', dest='P_path', type=str,
-                        default="../data/type2P.layer=3.iters=16.classifier=svm.masked=True.pickle",
-                        help='input_path')
-                        
-    parser.add_argument('--P-path2', dest='P_path2', type=str,
-                        default="../data/type2P.layer=3.iters=16.classifier=svm.masked=True.pickle",
-                        help='input_path')
                         
     #parser.add_argument('--agreement-file-type', dest='agreement_file_type', type=str,
     #                    default="subj_rel",
     #                    help='subj_rel/obj_rel_across_inanim/simple_agrmt etc')
     parser.add_argument('--layer', dest='layer', type=int,
-                        default=3,
+                        default=6,
                         help='bert layer')
     parser.add_argument('--device', dest='device', type=str,
                         default="cuda",
@@ -104,17 +98,30 @@ if __name__ == '__main__':
     parser.add_argument('--only-not-attractors', dest='only_not_attractors', type=int,
                         default=0,
                         help="whether to keep only sentences without attractors among the RC sentences")
-                        
-                        
+                      
+    parser.add_argument('--alpha', dest='alpha', type=float,
+                        default=0,
+                        help="whether to only perform nullspace projection (without counterfactual projection)")
+    parser.add_argument('--classifier', dest='classifier', type=str,
+                        default="sgd",
+                        help="whether to only perform nullspace projection (without counterfactual projection)")
+    parser.add_argument('--iters', dest='iters', type=int,
+                        default=16,
+                        help="whether to only perform nullspace projection (without counterfactual projection)")
+                    
+                                                                             
     args = parser.parse_args()
     only_attractors = args.only_attractors == 1
     only_not_attractors = args.only_not_attractors == 1
-    print("only attractors:", only_attractors, "only not attractors:", only_not_attractors)
+    alpha = args.alpha# == 0
+    
+    print("only attractors:", only_attractors, "only not attractors:", only_not_attractors, "alpha:", alpha)
     results = defaultdict(dict)
     
-    with open(args.P_path, "rb") as f:
+    
+    with open("../data/type2P.layer={}.iters={}.classifier={}.masked=True.pickle".format(args.layer, args.iters, args.classifier), "rb") as f:
         type2P = pickle.load(f)   
-    with open(args.P_path2, "rb") as f:
+    with open("../data/type2P.layer={}.iters={}.classifier={}.masked=True.pickle".format(args.layer, args.iters, args.classifier), "rb") as f:
         type2P2 = pickle.load(f) 
             
     relevant = ["subj_rel.pickle", "sent_comp.pickle", "obj_rel_across_anim.pickle", "obj_rel_across_inanim.pickle", "obj_rel_no_comp_across_anim.pickle", "obj_rel_no_comp_across_inanim.pickle", "obj_rel_no_comp_within_anim.pickle", "obj_rel_no_comp_within_inanim.pickle", "obj_rel_within_anim.pickle", "simple_agrmt.pickle"]
@@ -136,19 +143,22 @@ if __name__ == '__main__':
 
             data = load_data("../marvin-linzen-data/" + filename, only_attractors, only_not_attractors)
             bert = bert_agreement.BertEncoder(args.device)
-            n = 250
-            data_with_states_before = bert_agreement.collect_bert_states(bert, copy.deepcopy(data[:n]), layer = args.layer, P = P, P2 = None)
-            data_with_states_after = bert_agreement.collect_bert_states(bert, copy.deepcopy(data[:n]), layer = args.layer, P = P, P2 = P2)
+            n = 400
+            data_with_states_before = bert_agreement.collect_bert_states(bert, copy.deepcopy(data[:n]), layer = args.layer, P = I, P2 = None, alpha = alpha)
+            data_with_states_after = bert_agreement.collect_bert_states(bert, copy.deepcopy(data[:n]), layer = args.layer, P = P, P2 = P2, alpha = alpha)
 
+            
             acc_before, prob_good_before, prob_bad_before = get_accuracy(data_with_states_before)
             acc_after, prob_good_after, prob_bad_after = get_accuracy(data_with_states_after)
             
             r =  {"acc_before": acc_before, "acc_after": acc_after, "prob_good_before": prob_good_before, "prob_bad_before": prob_bad_before, "prob_good_after": prob_good_after, "prob_bad_after": prob_bad_after}
             print("before", r["acc_before"], "after", r["acc_after"], "relative change", (r["acc_before"]-r["acc_after"])/r["acc_before"]*100)
             results[filename][P_type] =r
-            
+            print("=====================================================")
     
-    with open("../data/agreement_results.16.layer={}.only_attractors={}.only_not_attractors={}.pickle".format(args.layer, only_attractors, only_not_attractors), "wb") as f:
+    fname = "../data/agreement_results.{}.layer={}.only_attractors={}.only_not_attractors={}.alpha={}.classifier={}.pickle".format(args.iters, args.layer, only_attractors, only_not_attractors, alpha, args.classifier)
+    with open(fname, "wb") as f:
+        print("Saving {}".format(fname))
         pickle.dump(results, f)
                 
     """ 
