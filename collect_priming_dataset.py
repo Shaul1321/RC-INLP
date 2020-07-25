@@ -10,8 +10,8 @@ from sklearn.utils import shuffle
 random.seed(0)
 np.random.seed(0)
 
-pos2neg_fnames = {"src": "scont", "orc": "ocont", "orrc": "ocont", "prc": "ocont", "prrc": "ocont",
-"src_by": "scont_by", "orrc_that": "ocont_that", "prrc_that": "ocont_that", "orc_by": "ocont_by", "orrc_by": "ocont_by"}
+pos2neg_fnames = {"src": "scont", "src_by": "scont_by", "orc": "ocont", "orc_by": "ocont_by", "orrc": "ocont", "orrc_by": "ocont_by", "orrc_that": "ocont_that", "prc": "ocont", "prrc": "ocont",  "prrc_that": "ocont_that"}
+
 
 def collect_data(sentences_per_type, ignore_prob, path = "../rc_dataset_new"):
 
@@ -114,7 +114,7 @@ if __name__ == '__main__':
     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--sentences_per_type', dest='sentences_per_type', type=int,
-                    default=500,
+                    default=1250,
                     help='how many sentences to take from each file.')
     parser.add_argument('--ignore_prob', dest='ignore_prob', type=float,
                     default=0.6,
@@ -131,7 +131,7 @@ if __name__ == '__main__':
     neg = [d for d in data if d["label"] == 0]
     print("Proportion positive: {}".format(len(pos)/(len(pos) + len(neg))  ))
     
-    for typ in ["src", "orc", "orrc", "prc", "prrc"]:
+    for typ in ["src", "src_by", "orc", "orc_by", "orrc", "orrc_by", "orrc_that", "prc", "prrc", "prrc_that"]:
     
         relevant = [d for d in data if d["sent_type"] == typ]
         print(typ, len(relevant))
