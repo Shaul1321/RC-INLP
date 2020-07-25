@@ -5,10 +5,15 @@ import spacy
 import os
 import numpy as np
 import random
+from sklearn.utils import shuffle
 
-pos2neg_fnames = {"src": "scont", "orc": "ocont", "orrc": "ocont", "prc": "ocont", "prrc": "ocont"}
+random.seed(0)
+np.random.seed(0)
 
-def collect_data(sentences_per_type, path = "../rc_dataset"):
+pos2neg_fnames = {"src": "scont", "orc": "ocont", "orrc": "ocont", "prc": "ocont", "prrc": "ocont",
+"src_by": "scont_by", "orrc_that": "ocont_that", "prrc_that": "ocont_that", "orc_by": "ocont_by", "orrc_by": "ocont_by"}
+
+def collect_data(sentences_per_type, ignore_prob, path = "../rc_dataset_new"):
 
     data = []
     sents_collected = set()
@@ -16,37 +21,36 @@ def collect_data(sentences_per_type, path = "../rc_dataset"):
     for sentences_set in os.listdir(path):
 
         for filename in os.listdir(path + "/" + sentences_set):
-            type_sents = filename.split("_")[1].split(".")[0]
+            type_sents = filename.split("_", 1)[1].split(".")[0]
+            print(type_sents)
+            
             if type_sents in pos2neg_fnames.keys():
                 pos_path = path + "/" + sentences_set + "/" + filename
                 neg_type_sents = pos2neg_fnames[type_sents]
                 neg_path = path + "/" + sentences_set + "/" + filename.split("_")[0]+"_"+neg_type_sents+".txt"
-
+                
                 with open(pos_path, "r", encoding="utf-8") as f:
 
-                    lines_pos = f.readlines()[:sentences_per_type]
+                    lines_pos = f.readlines()
                 with open(neg_path, "r", encoding="utf-8") as f:
 
-                    lines_neg = f.readlines()[:sentences_per_type]
+                    lines_neg = f.readlines()
 
-                ## subsample sentences
-                #lines_pos = lines_pos[:sentences_per_type]
-                #if sentences_set == "5000a" or (type_sents in pos2neg_fnames.keys()):
-                #    lines_neg = lines_neg[:sentences_per_type]
+                lines_pos, lines_neg = shuffle(lines_pos[1:], lines_neg[1:], random_state = 0)
+                lines_pos, lines_neg = lines_pos[:sentences_per_type], lines_neg[:sentences_per_type]
+                
+                for i, (pos_line, neg_line) in enumerate(zip(lines_pos, lines_neg)):
 
-                # collect instances of positive and negative examples
-
-                for i, (pos_line, neg_line) in enumerate(zip(lines_pos[1:], lines_neg[1:])):
-
-                    txt_pos, start_pos, length_pos = pos_line.strip().split(",")
-                    txt_neg, start_neg, length_neg = neg_line.strip().split(",")
+                    txt_pos, start_pos, length_pos, plurality_pos = pos_line.strip().split(",")
+                    txt_neg, start_neg, length_neg, plurality_neg = neg_line.strip().split(",")
                     start, length = int(start_pos), int(length_pos)
                     end = start + length # end is one index post the end of the RC.
-
+                    
                     # positives
-
-                    for relc_index in range(start, end):
-
+                    idx = np.random.choice(range(start, end), size = 3, replace = False)
+                    for relc_index in idx:
+                        #if np.random.random() < ignore_prob: continue
+                        
                         data.append({"text": txt_pos, "start": start, "end": end, "label": 1, "ind": relc_index,
                                      "sent_type": type_sents, "sentences_set": sentences_set})
                         w = txt_pos.split(" ")[relc_index]
@@ -110,12 +114,24 @@ if __name__ == '__main__':
     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--sentences_per_type', dest='sentences_per_type', type=int,
-                    default=300,
+                    default=500,
                     help='how many sentences to take from each file.')
+    parser.add_argument('--ignore_prob', dest='ignore_prob', type=float,
+                    default=0.6,
+                    help='probability to skip an index within a RC')
+                    
     args = parser.parse_args()
-    data = collect_data(args.sentences_per_type)
+    data = collect_data(args.sentences_per_type, args.ignore_prob)
     with open("../data/data.pickle", "wb") as f:
 
         pickle.dump(data, f)
 
     print("Collected {} examples".format(len(data)))
+    pos = [d for d in data if d["label"] == 1]
+    neg = [d for d in data if d["label"] == 0]
+    print("Proportion positive: {}".format(len(pos)/(len(pos) + len(neg))  ))
+    
+    for typ in ["src", "orc", "orrc", "prc", "prrc"]:
+    
+        relevant = [d for d in data if d["sent_type"] == typ]
+        print(typ, len(relevant))
