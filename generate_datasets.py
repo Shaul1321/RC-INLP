@@ -12,7 +12,8 @@ import random
 import numpy as np
 from collections import defaultdict
 
-pos2neg_fnames = {"src": "scont", "orc": "ocont", "orrc": "ocont", "prc": "ocont", "prrc": "ocont"}
+pos2neg_fnames = {"src": "scont", "orc": "ocont", "orrc": "ocont", "prc": "ocont", "prrc": "ocont",
+"src_by": "scont_by", "orrc_that": "ocont_that", "prrc_that": "ocont_that", "orc_by": "ocont_by", "orrc_by": "ocont_by"}
 
 
 def construct_dataset(examples: dict):
@@ -120,7 +121,7 @@ if __name__ == '__main__':
                         default="../data/data_with_states.layer=6.masked=True.model=roberta.pickle",
                         help='input_path')
     parser.add_argument('--sentences-group', dest='sentences_group', type=str,
-                        default='adapt',
+                        default='test',
                         help='adapt/test')
 
     args = parser.parse_args()
