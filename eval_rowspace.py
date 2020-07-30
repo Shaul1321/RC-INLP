@@ -10,6 +10,8 @@ import sys
 sys.path.append("inlp/")
 from inlp import debias
 
+pd.set_option('precision', 5)
+
 layers = ["0", "3", "6", "6-random0", "6-random1", "6-random2", "6-random3", "6-random4", "9", "12"]
 #layers = ["0", "3"]
 
@@ -22,8 +24,8 @@ def load_data(classifier, iters):
 
     for masked in ["True"]:
     
-        fname = "../data/datasets.5000a.layer={}.masked={}.pickle".format(layer, masked)
-        fname2 = "../data/datasets.5000t.layer={}.masked={}.pickle".format(layer, masked)
+        fname = "../data/datasets.adapt.layer={}.masked={}.model=bert.pickle".format(layer, masked)
+        fname2 = "../data/datasets.test.layer={}.masked={}.model=bert.pickle".format(layer, masked)
 
         with open(fname, "rb") as f:
             train_dev_lex = pickle.load(f)
@@ -90,10 +92,10 @@ def collect_vecs(classifier, iters, do_random_projection):
         type2vecs_rowspace = {}
         type2vecs_rowspace_nonlex = {}
         
-        for rc_type in ["src", "orc", "orrc", "prc", "prrc", "all"]:
+        for rc_type in ["src", "src_by", "orc", "orc_by", "orrc", "orrc_by", "orrc_that", "prc", "prrc", "prrc_that", "all"]:
         
             if do_random_projection:
-                w = np.random.rand(10, 768) - 0.5
+                w = np.random.rand(iters, 768) - 0.5
                 P_rowspace = debias.get_rowspace_projection(w)
                 assert np.allclose(P_rowspace.dot(P_rowspace) - P_rowspace, 0)
                 
@@ -128,16 +130,17 @@ def calc_sims(layer2ttype2vecs_rowspace, layer2type2vecs_rowspace_nonlex, classi
     
     type2ind = {d:i for i,d in enumerate(layer2type2vecs_rowspace_nonlex["0"].keys())}
     ind2type = {i:d for d,i in type2ind.items()}
+    
     layer2sims = dict()
     
     for layer in layer2ttype2vecs_rowspace.keys():
     
         type2vecs_rowspace, type2vecs_rowspace_nonlex =  layer2ttype2vecs_rowspace[layer], layer2type2vecs_rowspace_nonlex[layer]
-        sims = np.zeros((6,6))
+        sims = np.zeros((11,11))
     
         from sklearn.metrics.pairwise import cosine_similarity
 
-        for key, vecs in type2vecs_rowspace_nonlex.items(): #type2vecs_rowspace.items():
+        for key, vecs in type2vecs_rowspace.items():
             for key2, vecs2 in type2vecs_rowspace_nonlex.items():
 
         
@@ -148,8 +151,10 @@ def calc_sims(layer2ttype2vecs_rowspace, layer2type2vecs_rowspace_nonlex, classi
 
     labels = [ind2type[i] for i in range(len(ind2type))]
     for layer, sims in layer2sims.items():
+    
         df = pd.DataFrame(sims, index = labels, columns = labels)
         print("Layer {}".format(layer))
+
         print(df)
         print("========================================================")
 
@@ -172,11 +177,11 @@ parser = argparse.ArgumentParser(description='test influence of INLP on agreemen
 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
 parser.add_argument('--classifier', dest='classifier', type=str,
-                        default="sgd-perceptron")
+                        default="sgd-log")
 parser.add_argument('--iters', dest='iters', type=int,
-                        default=16)                    
+                        default=8)                    
 parser.add_argument('--random-projection', dest='random_projection', type=int,
-                        default=0)                                                                               
+                        default=1)                                                                               
 args = parser.parse_args()
 do_random_projection = args.random_projection == 1            
 layer2ttype2vecs_rowspace, layer2type2vecs_rowspace_nonlex = collect_vecs(args.classifier, args.iters, do_random_projection)        

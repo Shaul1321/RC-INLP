@@ -114,7 +114,7 @@ if __name__ == '__main__':
     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--sentences_per_type', dest='sentences_per_type', type=int,
-                    default=1250,
+                    default=1000,
                     help='how many sentences to take from each file.')
     parser.add_argument('--ignore_prob', dest='ignore_prob', type=float,
                     default=0.6,

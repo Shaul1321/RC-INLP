@@ -24,18 +24,20 @@ def run_inlp(train_dev_datasets, classifier, num_classifiers, run_on_all):
     type2proj = {}
 
     print("Keys: {}".format(train_dev_datasets.keys()))
-    alpha = 1e-3
+    alpha = 1 * 1e-4
     early_stopping = True
     
     
     if classifier == "sgd-log":
             clf = sklearn.linear_model.SGDClassifier
-            params = {"max_iter": 3000, "early_stopping": early_stopping, "random_state": 0, "n_jobs": 8, "loss": "log", "fit_intercept": False, "alpha": alpha}
+            #params = {"max_iter": 1250, "early_stopping": early_stopping, "random_state": 0, "n_jobs": 8, "loss": "log", "fit_intercept": True, "alpha": alpha,
+            #"n_iter_no_change": 10, "eta0": 0.1, "learning_rate": "adaptive"}
+            params = {"early_stopping": True, "eta0": 0.1, "learning_rate": "adaptive"}
             
     if classifier == "sgd-hinge":
             clf = sklearn.linear_model.SGDClassifier
             #params = {"early_stopping": early_stopping, "random_state": 1, "n_jobs": 8, "loss": "hinge", "alpha": alpha}
-            params = {"max_iter": 2000, "early_stopping": early_stopping, "random_state": 1, "n_jobs": 8, "fit_intercept": False}
+            params = {"max_iter": 3000, "early_stopping": early_stopping, "random_state": 1, "n_jobs": 8, "fit_intercept": True, "alpha": alpha}
                         
     if classifier == "sgd-perceptron":
             clf = sklearn.linear_model.SGDClassifier
@@ -88,7 +90,7 @@ if __name__ == '__main__':
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--train-dev-path', dest='train_dev_path', type=str,
-                        default="../data/datasets.5000a.layer=6.masked=False.pickle",
+                        default="../data/datasets.adapt.layer=6.masked=False.model=bert.pickle",
                         help='input_path')
     parser.add_argument('--classifier', dest='classifier', type=str,
                         default="svm",
@@ -103,14 +105,15 @@ if __name__ == '__main__':
     args = parser.parse_args()
     run_on_all = args.all == 1
     
-    layer = "layer="+str(args.train_dev_path.split(".")[-3].split("=")[-1])
-    masked = "masked="+str(args.train_dev_path.split(".")[-2].split("=")[-1])
+    layer = "layer="+str(args.train_dev_path.split(".")[-4].split("=")[-1])
+    masked = "masked="+str(args.train_dev_path.split(".")[-3].split("=")[-1])
 
     if layer == "layer=-1": layer = "layer=12"
     
     train_dev_datasets = load_data(args.train_dev_path)
     print(layer)
     type2proj = run_inlp(train_dev_datasets, args.classifier, args.num_classifiers, run_on_all)
+    
     with open("../data/type2P.{}.iters={}.classifier={}.{}.pickle".format(layer, args.num_classifiers, args.classifier, masked), "wb") as f:
     
         pickle.dump(type2proj, f)

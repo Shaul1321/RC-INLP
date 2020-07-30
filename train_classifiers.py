@@ -24,16 +24,17 @@ def train_classifiers(train_dev_datasets, test_datasets, classifier, num_clfs = 
         clf_class = sklearn.svm.LinearSVC
     elif classifier == "sgd-log":
         clf_class = sklearn.linear_model.SGDClassifier
-        params = {"max_iter": 3000, "early_stopping": early_stopping, "random_state": 0, "n_jobs": 8, "loss": "log", "fit_intercept": False, "alpha": alpha}
-    elif classifier == "sgd":
+        params = {"early_stopping": True, "eta0": 0.1, "learning_rate": "adaptive"}
+    elif classifier == "sgd-hinge":
         clf_class = sklearn.linear_model.SGDClassifier
+        params = {"max_iter": 3000, "early_stopping": early_stopping, "random_state": 0, "n_jobs": 8, "fit_intercept": False, "alpha": alpha}
         
     results = np.zeros((len(train_dev_datasets), len(train_dev_datasets)))
     type2ind = {d:i for i,d in enumerate(train_dev_datasets.keys())}
     ind2type = {i:d for d,i in type2ind.items()}
 
-    for positive_type in tqdm.tqdm(train_dev_datasets.keys()):
-
+    for positive_type in train_dev_datasets.keys():
+        #print("positive_type: {}".format(positive_type))
         train_x, train_y, train_is_rc = train_dev_datasets[positive_type]["train"]
         dev_x, dev_y, dev_is_rc = train_dev_datasets[positive_type]["dev"]
 
@@ -89,10 +90,10 @@ if __name__ == '__main__':
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--train-dev-path', dest='train_dev_path', type=str,
-                        default="../data/datasets.5000a.layer=6.masked=True.pickle",
+                        default="../data/datasets.adapt.layer=6.masked=True.model=roberta.pickle",
                         help='input_path')
     parser.add_argument('--test-path', dest='test_path', type=str,
-                        default="../data/datasets.5000a.layer=6.masked=True.pickle",
+                        default="../data/datasets.test.layer=6.masked=True.model=roberta.pickle",
                         help='input_path for the non-lexically-overlapped datta')
     parser.add_argument('--recall', dest='recall', type=int,
                         default=0,
@@ -102,13 +103,14 @@ if __name__ == '__main__':
                         help='sgd/svm')
                             
     args = parser.parse_args()
-    test_group = args.test_path.split(".")[-4]
+    test_group = args.test_path.split(".")[-5]
  
-    print(test_group)
-    layer = "layer="+str(args.train_dev_path.split(".")[-3].split("=")[-1])
+    #print(test_group)
+    layer = "layer="+str(args.train_dev_path.split(".")[-4].split("=")[-1])
+    
     if layer == "layer=-1": layer = "layer=12"
-    print(layer)
-    print(args.classifier, "recall:", args.recall)
+    print("LAYER: ", layer.split("=")[1])
+    #print(args.classifier, "recall:", args.recall)
     recall = args.recall == 1
     
     train_dev_datasets = load_data(args.train_dev_path)

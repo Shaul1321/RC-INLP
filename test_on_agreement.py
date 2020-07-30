@@ -7,6 +7,17 @@ import torch
 import os
 from collections import defaultdict
 import argparse
+import random
+
+
+def get_diff(str1, str2):
+    str1_lst, str2_lst = str1.split(" "), str2.split(" ")
+    i = [j for j in range(len(str1_lst)) if str1_lst[j] != str2_lst[j]]
+    assert len(i) == 1
+    i = i[0]
+    return i, str1_lst[i], str2_lst[i]
+
+
 
 def load_data(agreement_file_type, only_attractors = False, only_not_attractors = False):
     #with open("../marvin-linzen-data/{}.pickle".format(agreement_file_type), "rb") as f:
@@ -16,9 +27,15 @@ def load_data(agreement_file_type, only_attractors = False, only_not_attractors 
     data = []
     i = 0
     
-    print(agreement_file_type)
-    print("keys:", raw_data.keys())
+    for key in list(raw_data.keys())[:]:
+     
+     if "prc" in key or "prrc" in key: # fix format of the prc/prrc files
+        
+        new = key.replace("subj_s", "sing").replace("subj_p", "plur").replace("attractor_s", "sing").replace("attractor_p", "plur")
+        raw_data[new] = raw_data[key]
+        del raw_data[key]
     
+
     for key in raw_data.keys():
 
         if not ("sent_comp" in agreement_file_type or "simple_agrmt" in agreement_file_type): # = if has agreement across RC
@@ -32,6 +49,7 @@ def load_data(agreement_file_type, only_attractors = False, only_not_attractors 
                 if not (key.split("_").count("sing") == 2 or key.split("_").count("plur") == 2): # if attractors
 
                     continue
+       
                 
         examples = raw_data[key]
         
@@ -40,14 +58,21 @@ def load_data(agreement_file_type, only_attractors = False, only_not_attractors 
             correct += " ."
             wrong += " ."
 
-            correct_lst, wrong_lst = correct.split(" "), wrong.split(" ")
-            correct_verb, wrong_verb = correct_lst[-3], wrong_lst[-3]
-            data.append({"sent": correct, "verb_index": len(correct_lst) - 3, "correct_verb": correct_verb,
-                     "wrong_verb": wrong_verb}) #note: verb_index is actually verb_index + 1 (handling the period) 
-                     
-            if i == 1:
-                print(data[0]["sent"], data[0]["correct_verb"])
-            
+            #correct_lst, wrong_lst = correct.split(" "), wrong.split(" ")
+            verb_ind, correct_verb, wrong_verb = get_diff(correct, wrong)
+     
+            data.append({"sent": correct, "verb_index": verb_ind, "correct_verb": correct_verb,
+                     "wrong_verb": wrong_verb})
+
+                
+    random.seed(0)
+    random.shuffle(data)
+   
+    
+    for i in range(3):
+        print(data[i]["sent"], data[i]["correct_verb"], data[i]["wrong_verb"])
+        print("=========================")
+        
     return data
 
 
@@ -57,11 +82,28 @@ def get_accuracy(data_with_states):
 
     good, bad = 0, 0
     for d in data_with_states:
-        if d["correct_word_prob"] is None or d["wrong_word_prob"] is None:
+        if (d["correct_word_prob"] is None) and d["wrong_word_prob"] is None:
         #    print(d["top_preds"][:10])
         #    print(d["sent"])
         #    print("================")
             continue
+        if d["correct_word_prob"] is None and d["wrong_word_prob"] is not None:
+        
+            bad += 1
+            probs_good.append(0)
+            probs_bad.append(d["wrong_word_prob"]["prob"])
+            continue
+            
+        if d["correct_word_prob"] is not None and d["wrong_word_prob"] is None:
+        
+            good += 1
+            probs_good.append(d["correct_word_prob"]["prob"])
+            probs_bad.append(0)
+            continue
+            
+        
+        #if d["correct_word_rank"] > 5000 and d["wrong_word_rank"] > 5000: continue
+        
         rank_good, rank_bad = d["correct_word_prob"]["rank"], d["wrong_word_prob"]["rank"]
         prob_good, prob_bad = d["correct_word_prob"]["prob"], d["wrong_word_prob"]["prob"]
         probs_good.append(prob_good)
@@ -72,7 +114,7 @@ def get_accuracy(data_with_states):
         else:
             bad += 1
 
-    return good / (good + bad), np.mean(prob_good), np.mean(prob_bad)
+    return good / (good + bad + 1e-6), np.mean(prob_good), np.mean(prob_bad)
 
 
 
@@ -106,7 +148,7 @@ if __name__ == '__main__':
                         default="sgd",
                         help="whether to only perform nullspace projection (without counterfactual projection)")
     parser.add_argument('--iters', dest='iters', type=int,
-                        default=16,
+                        default=8,
                         help="whether to only perform nullspace projection (without counterfactual projection)")
                     
                                                                              
@@ -124,7 +166,7 @@ if __name__ == '__main__':
     with open("../data/type2P.layer={}.iters={}.classifier={}.masked=True.pickle".format(args.layer, args.iters, args.classifier), "rb") as f:
         type2P2 = pickle.load(f) 
             
-    relevant = ["subj_rel.pickle", "sent_comp.pickle", "obj_rel_across_anim.pickle", "obj_rel_across_inanim.pickle", "obj_rel_no_comp_across_anim.pickle", "obj_rel_no_comp_across_inanim.pickle", "obj_rel_no_comp_within_anim.pickle", "obj_rel_no_comp_within_inanim.pickle", "obj_rel_within_anim.pickle", "simple_agrmt.pickle"]
+    relevant = ["subj_rel.pickle", "sent_comp.pickle", "obj_rel_across_anim.pickle", "obj_rel_across_inanim.pickle", "obj_rel_no_comp_across_anim.pickle", "obj_rel_no_comp_across_inanim.pickle", "obj_rel_no_comp_within_anim.pickle", "obj_rel_no_comp_within_inanim.pickle", "obj_rel_within_anim.pickle", "prc_anim.pickle", "prc_inanim.pickle", "prrc_anim.pickle", "prrc_inanim.pickle", "simple_agrmt.pickle"]
     
     #relevant = ["subj_rel.pickle", "sent_comp.pickle", "obj_rel_no_comp_across_inanim.pickle"]
     
@@ -142,8 +184,9 @@ if __name__ == '__main__':
             I = torch.eye(P.shape[0]).float().to(args.device)
 
             data = load_data("../marvin-linzen-data/" + filename, only_attractors, only_not_attractors)
+            
             bert = bert_agreement.BertEncoder(args.device)
-            n = 400
+            n = 350
             data_with_states_before = bert_agreement.collect_bert_states(bert, copy.deepcopy(data[:n]), layer = args.layer, P = I, P2 = None, alpha = alpha)
             data_with_states_after = bert_agreement.collect_bert_states(bert, copy.deepcopy(data[:n]), layer = args.layer, P = P, P2 = P2, alpha = alpha)
 
@@ -152,6 +195,7 @@ if __name__ == '__main__':
             acc_after, prob_good_after, prob_bad_after = get_accuracy(data_with_states_after)
             
             r =  {"acc_before": acc_before, "acc_after": acc_after, "prob_good_before": prob_good_before, "prob_bad_before": prob_bad_before, "prob_good_after": prob_good_after, "prob_bad_after": prob_bad_after}
+            r["acc_before"]+=1e-5
             print("before", r["acc_before"], "after", r["acc_after"], "relative change", (r["acc_before"]-r["acc_after"])/r["acc_before"]*100)
             results[filename][P_type] =r
             print("=====================================================")
