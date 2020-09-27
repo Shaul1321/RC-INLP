@@ -95,11 +95,13 @@ def get_debiasing_projection(classifier_class, cls_params: Dict, num_classifiers
     X_dev_cp = X_dev.copy()
     rowspace_projections = []
     Ws = []
+    accs = []
     
     pbar = tqdm(range(num_classifiers))
     for i in pbar:
         
         clf = classifier.SKlearnClassifier(classifier_class(**cls_params))
+       
         dropout_scale = 1./(1 - dropout_rate + 1e-6)
         dropout_mask = (np.random.rand(*X_train.shape) < (1-dropout_rate)).astype(float) * dropout_scale
         
@@ -115,7 +117,8 @@ def get_debiasing_projection(classifier_class, cls_params: Dict, num_classifiers
         acc = clf.train_network((X_train_cp * dropout_mask)[relevant_idx_train], Y_train[relevant_idx_train], X_dev_cp[relevant_idx_dev], Y_dev[relevant_idx_dev])
         pbar.set_description("iteration: {}, accuracy: {}".format(i, acc))
         if acc < min_accuracy: continue
-
+        accs.append(acc)
+        
         W = clf.get_weights()
         Ws.append(W)
         P_rowspace_wi = get_rowspace_projection(W) # projection to W's rowspace
@@ -145,7 +148,7 @@ def get_debiasing_projection(classifier_class, cls_params: Dict, num_classifiers
     
     P = get_projection_to_intersection_of_nullspaces(rowspace_projections, input_dim)
 
-    return P, rowspace_projections, Ws
+    return P, rowspace_projections, Ws, accs
 
 
 if __name__ == '__main__':

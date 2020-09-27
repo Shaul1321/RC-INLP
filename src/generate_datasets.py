@@ -12,7 +12,7 @@ import random
 import numpy as np
 from collections import defaultdict
 
-pos2neg_fnames = {"src": "scont", "orc": "ocont", "orrc": "ocont", "prc": "ocont", "prrc": "ocont"}
+pos2neg_fnames = {"src": "scont", "src_by": "scont_by", "orc": "ocont", "orc_by": "ocont_by", "orrc": "ocont", "orrc_by": "ocont_by", "orrc_that": "ocont_that", "prc": "ocont", "prrc": "ocont",  "prrc_that": "ocont_that"}
 
 
 def construct_dataset(examples: dict):
@@ -117,21 +117,21 @@ if __name__ == '__main__':
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--input-path', dest='input_path', type=str,
-                        default="../data/data_with_states.layer=9.masked=True.pickle",
+                        default="../data/data_with_states.layer=6.masked=True.model=roberta.pickle",
                         help='input_path')
-    parser.add_argument('--inlp-iterations', dest='inlp_iterations', type=int,
-                        default=32,
-                        help='number of INLP iterations to perform')
     parser.add_argument('--sentences-group', dest='sentences_group', type=str,
-                        default='5000t',
-                        help='5000a/5000t')
+                        default='adapt',
+                        help='adapt/test')
 
     args = parser.parse_args()
-    layer = args.input_path.split(".")[-3]
-    masked = args.input_path.split(".")[-2]
-
+    layer = args.input_path.split(".")[-4]
+    masked = args.input_path.split(".")[-3]
+    model = args.input_path.split(".")[-2]
+    print("model is {}".format(model))
+    print("layer is {}".format(layer))
     sent_type2data = get_train_dev_test(args.sentences_group, args.input_path)
 
-    with open("../data/datasets.{}.{}.{}.pickle".format(args.sentences_group, layer, masked), "wb") as f:
-
+    fname = "../data/datasets.{}.{}.{}.{}.pickle".format(args.sentences_group, layer, masked, model)
+    with open(fname, "wb") as f:
+        print("Saving {}".format(fname))
         pickle.dump(sent_type2data, f)

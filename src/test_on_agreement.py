@@ -7,6 +7,17 @@ import torch
 import os
 from collections import defaultdict
 import argparse
+import random
+
+
+def get_diff(str1, str2):
+    str1_lst, str2_lst = str1.split(" "), str2.split(" ")
+    i = [j for j in range(len(str1_lst)) if str1_lst[j] != str2_lst[j]]
+    assert len(i) == 1
+    i = i[0]
+    return i, str1_lst[i], str2_lst[i]
+
+
 
 def load_data(agreement_file_type, only_attractors = False, only_not_attractors = False):
     #with open("../marvin-linzen-data/{}.pickle".format(agreement_file_type), "rb") as f:
@@ -16,11 +27,21 @@ def load_data(agreement_file_type, only_attractors = False, only_not_attractors 
     data = []
     i = 0
     
-    print(agreement_file_type)
-    print("keys:", raw_data.keys())
-    
+    for key in list(raw_data.keys())[:]:
+     
+     #print("key", key, "agreement_file_type", agreement_file_type)
+     if "prc" in agreement_file_type or "prrc" in agreement_file_type: # fix format of the prc/prrc files
+        
+        new = key.replace("subj_s", "sing").replace("subj_p", "plur").replace("attractor_s", "sing").replace("attractor_p", "plur")
+        raw_data[new] = raw_data[key]
+        #print("Replaced {} with {}".format(key, new))
+        del raw_data[key]
+
+
     for key in raw_data.keys():
 
+        #print(key)
+        
         if not ("sent_comp" in agreement_file_type or "simple_agrmt" in agreement_file_type): # = if has agreement across RC
         
             if only_attractors:
@@ -32,6 +53,7 @@ def load_data(agreement_file_type, only_attractors = False, only_not_attractors 
                 if not (key.split("_").count("sing") == 2 or key.split("_").count("plur") == 2): # if attractors
 
                     continue
+       
                 
         examples = raw_data[key]
         
@@ -40,14 +62,24 @@ def load_data(agreement_file_type, only_attractors = False, only_not_attractors 
             correct += " ."
             wrong += " ."
 
-            correct_lst, wrong_lst = correct.split(" "), wrong.split(" ")
-            correct_verb, wrong_verb = correct_lst[-3], wrong_lst[-3]
-            data.append({"sent": correct, "verb_index": len(correct_lst) - 3, "correct_verb": correct_verb,
-                     "wrong_verb": wrong_verb}) #note: verb_index is actually verb_index + 1 (handling the period) 
-                     
-            if i == 1:
-                print(data[0]["sent"], data[0]["correct_verb"])
+            #correct_lst, wrong_lst = correct.split(" "), wrong.split(" ")
+            verb_ind, correct_verb, wrong_verb = get_diff(correct, wrong)
             
+            
+            if not ((correct_verb == "is") or (correct_verb == "are")): continue
+            
+            data.append({"sent": correct, "verb_index": verb_ind, "correct_verb": correct_verb,
+                     "wrong_verb": wrong_verb})
+
+                
+    random.seed(0)
+    random.shuffle(data)
+   
+    
+    for i in range(0):
+        print(data[i]["sent"], data[i]["correct_verb"], data[i]["wrong_verb"])
+        print("=========================")
+        
     return data
 
 
@@ -57,13 +89,30 @@ def get_accuracy(data_with_states):
 
     good, bad = 0, 0
     for d in data_with_states:
-        if d["correct_word_prob"] is None or d["wrong_word_prob"] is None:
+        if (d["correct_word_prob"] is None) and d["wrong_word_prob"] is None:
         #    print(d["top_preds"][:10])
         #    print(d["sent"])
         #    print("================")
             continue
-        rank_good, rank_bad = d["correct_word_prob"]["rank"], d["wrong_word_prob"]["rank"]
-        prob_good, prob_bad = d["correct_word_prob"]["prob"], d["wrong_word_prob"]["prob"]
+        if d["correct_word_prob"] is None and d["wrong_word_prob"] is not None:
+        
+            bad += 1
+            probs_good.append(0)
+            probs_bad.append(d["wrong_word_prob"])
+            continue
+            
+        if d["correct_word_prob"] is not None and d["wrong_word_prob"] is None:
+        
+            good += 1
+            probs_good.append(d["correct_word_prob"])
+            probs_bad.append(0)
+            continue
+            
+        
+        #if d["correct_word_rank"] > 5000 and d["wrong_word_rank"] > 5000: continue
+        
+        rank_good, rank_bad = d["correct_word_rank"], d["wrong_word_rank"]
+        prob_good, prob_bad = d["correct_word_prob"], d["wrong_word_prob"]
         probs_good.append(prob_good)
         probs_bad.append(prob_bad)
 
@@ -72,10 +121,47 @@ def get_accuracy(data_with_states):
         else:
             bad += 1
 
-    return good / (good + bad), np.mean(prob_good), np.mean(prob_bad)
+    return good / (good + bad + 1e-6), np.mean(prob_good), np.mean(prob_bad)
 
 
+def get_score(prob_correct, prob_wrong):
 
+    if prob_correct is not None and prob_wrong is not None:
+    
+        return prob_correct/(prob_correct + prob_wrong)
+    
+    elif prob_correct is not None and prob_wrong is None:
+    
+        return 1
+    
+    elif prob_correct is None:# and prob_wrong is not None:
+    
+        return 0
+
+def eval(data_to_save):
+
+    before = []
+    after = []
+    
+    for data in data_to_save:
+    
+        before_score = get_score(data["before"]["correct_word_prob"], data["before"]["wrong_word_prob"])
+        after_score = get_score(data["after"]["correct_word_prob"], data["after"]["wrong_word_prob"])
+        
+        if data["before"]["success"] and not data["after"]["success"] and random.random() < 0.0:
+            print(data["sentence"])
+            print(data["before"]["top_preds"][:10])
+            print(data["after"]["top_preds"][:10])
+            print("before score: ", before_score)
+            print("after score: ", after_score)
+            print("before prob: ", data["before"]["correct_word_prob"], data["before"]["wrong_word_prob"])
+            print("after prob: ", data["after"]["correct_word_prob"], data["after"]["wrong_word_prob"])
+            
+            print("======================================")
+        before.append(before_score)
+        after.append(after_score)
+    
+    return np.mean(before) if before else 0, np.mean(after) if after else 0
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -106,7 +192,7 @@ if __name__ == '__main__':
                         default="sgd",
                         help="whether to only perform nullspace projection (without counterfactual projection)")
     parser.add_argument('--iters', dest='iters', type=int,
-                        default=16,
+                        default=8,
                         help="whether to only perform nullspace projection (without counterfactual projection)")
                     
                                                                              
@@ -123,10 +209,12 @@ if __name__ == '__main__':
         type2P = pickle.load(f)   
     with open("../data/type2P.layer={}.iters={}.classifier={}.masked=True.pickle".format(args.layer, args.iters, args.classifier), "rb") as f:
         type2P2 = pickle.load(f) 
-            
-    relevant = ["subj_rel.pickle", "sent_comp.pickle", "obj_rel_across_anim.pickle", "obj_rel_across_inanim.pickle", "obj_rel_no_comp_across_anim.pickle", "obj_rel_no_comp_across_inanim.pickle", "obj_rel_no_comp_within_anim.pickle", "obj_rel_no_comp_within_inanim.pickle", "obj_rel_within_anim.pickle", "simple_agrmt.pickle"]
+    with open("../data/type2W.layer={}.iters={}.classifier={}.masked=True.pickle".format(args.layer, args.iters, args.classifier), "rb") as f:
+        type2W = pickle.load(f) 
+                    
+    relevant = ["subj_rel.pickle", "sent_comp.pickle", "obj_rel_across_anim.pickle", "obj_rel_across_inanim.pickle", "obj_rel_no_comp_across_anim.pickle", "obj_rel_no_comp_across_inanim.pickle", "obj_rel_no_comp_within_anim.pickle", "obj_rel_no_comp_within_inanim.pickle", "obj_rel_within_anim.pickle", "prc_anim.pickle", "prc_inanim.pickle", "prrc_anim.pickle", "prrc_inanim.pickle", "simple_agrmt.pickle"]
     
-    #relevant = ["subj_rel.pickle", "sent_comp.pickle", "obj_rel_no_comp_across_inanim.pickle"]
+    relevant = ["obj_rel_no_comp_across_anim.pickle"]#, "sent_comp.pickle", "obj_rel_no_comp_across_inanim.pickle"]
     
     for filename in os.listdir("../marvin-linzen-data/"):
     
@@ -135,30 +223,47 @@ if __name__ == '__main__':
         
         for P_type in type2P.keys():
 
+            #if (P_type != "orc"): continue# and (P_type != "prc") and (P_type != "prrc"): continue
+            #if "prc" not in filename: continue# and ("prrc" not in filename): continue
+            
             print(P_type, filename)
             
             P = torch.tensor(type2P[P_type]).float().to(args.device)
             P2 = torch.tensor(type2P2[P_type]).float().to(args.device)
             I = torch.eye(P.shape[0]).float().to(args.device)
+            ws = np.squeeze(np.array(type2W[P_type][0]),1)
+            ws = torch.tensor(ws/np.linalg.norm(ws, keepdims = True, axis = 1)).float().to(args.device)
 
             data = load_data("../marvin-linzen-data/" + filename, only_attractors, only_not_attractors)
+            
             bert = bert_agreement.BertEncoder(args.device)
-            n = 400
-            data_with_states_before = bert_agreement.collect_bert_states(bert, copy.deepcopy(data[:n]), layer = args.layer, P = I, P2 = None, alpha = alpha)
-            data_with_states_after = bert_agreement.collect_bert_states(bert, copy.deepcopy(data[:n]), layer = args.layer, P = P, P2 = P2, alpha = alpha)
+            n = 700
+            data_with_states_before = bert_agreement.collect_bert_states(bert, copy.deepcopy(data[:n]), layer = args.layer, P = I, P2 = None, alpha = alpha, ws=ws,project=False)
+            data_with_states_after = bert_agreement.collect_bert_states(bert, copy.deepcopy(data[:n]), layer = args.layer, P = P, P2 = P2, alpha = alpha, ws=ws,project=True)
 
+            data_to_save = []
+            for d_b, d_a in zip(data_with_states_before, data_with_states_after):
+
+                data_to_save.append({"before": d_b, "after": d_a, "sentence": d_b["sentence"], "correct_word": d_b["correct_word"], "wrong_word": d_b["wrong_word"],
+                "success_before": d_b["success"], "success_after": d_a["success"]})
+                
+                      
+            #acc_before, prob_good_before, prob_bad_before = get_accuracy(data_with_states_before)
+            #acc_after, prob_good_after, prob_bad_after = get_accuracy(data_with_states_after)
+            before_score, after_score = eval(data_to_save)
+            del data_with_states_before
+            del data_with_states_after
             
-            acc_before, prob_good_before, prob_bad_before = get_accuracy(data_with_states_before)
-            acc_after, prob_good_after, prob_bad_after = get_accuracy(data_with_states_after)
-            
-            r =  {"acc_before": acc_before, "acc_after": acc_after, "prob_good_before": prob_good_before, "prob_bad_before": prob_bad_before, "prob_good_after": prob_good_after, "prob_bad_after": prob_bad_after}
-            print("before", r["acc_before"], "after", r["acc_after"], "relative change", (r["acc_before"]-r["acc_after"])/r["acc_before"]*100)
-            results[filename][P_type] =r
+            #r =  {"acc_before": acc_before, "acc_after": acc_after, "prob_good_before": prob_good_before, "prob_bad_before": prob_bad_before, "prob_good_after": prob_good_after, "prob_bad_after": prob_bad_after}
+            #r["acc_before"]+=1e-6
+            print("**SUMMARY**: before", before_score, "after", after_score, "relative change", (before_score-after_score)/before_score*100)
+            results[filename][P_type] = data_to_save
             print("=====================================================")
     
-    fname = "../data/agreement_results.{}.layer={}.only_attractors={}.only_not_attractors={}.alpha={}.classifier={}.pickle".format(args.iters, args.layer, only_attractors, only_not_attractors, alpha, args.classifier)
+    fname = "../data/agreement_results/agreement_results.{}.layer={}.only_attractors={}.only_not_attractors={}.alpha={}.classifier={}.copula.v2.pickle".format(args.iters, args.layer, only_attractors, only_not_attractors, alpha, args.classifier)
     with open(fname, "wb") as f:
         print("Saving {}".format(fname))
+        #print(results)
         pickle.dump(results, f)
                 
     """ 

@@ -10,6 +10,8 @@ import sys
 sys.path.append("inlp/")
 from inlp import debias
 
+pd.set_option('precision', 5)
+
 layers = ["0", "3", "6", "6-random0", "6-random1", "6-random2", "6-random3", "6-random4", "9", "12"]
 #layers = ["0", "3"]
 
@@ -17,13 +19,14 @@ def load_data(classifier, iters):
 
  layer2data = defaultdict(dict)
  layer2projs = defaultdict(dict)
+ layer2ws = defaultdict(dict)
  
  for layer in layers:
 
     for masked in ["True"]:
     
-        fname = "../data/datasets.5000a.layer={}.masked={}.pickle".format(layer, masked)
-        fname2 = "../data/datasets.5000t.layer={}.masked={}.pickle".format(layer, masked)
+        fname = "../data/datasets.adapt.layer={}.masked={}.model=bert.pickle".format(layer, masked)
+        fname2 = "../data/datasets.test.layer={}.masked={}.model=bert.pickle".format(layer, masked)
 
         with open(fname, "rb") as f:
             train_dev_lex = pickle.load(f)
@@ -36,6 +39,12 @@ def load_data(classifier, iters):
             type2proj = pickle.load(f)
     
         layer2projs[layer] = type2proj
+        
+        ws_path = "../data/type2W.layer={}.iters={}.classifier={}.masked={}.pickle".format(layer, iters, classifier, masked)
+        with open(ws_path, "rb") as f:
+            type2ws = pickle.load(f)
+    
+        layer2ws[layer] = type2ws
                 
         dev_x_lex, dev_y_lex = np.concatenate([train_dev_lex[positive_type]["dev"][0] for positive_type in train_dev_lex.keys()], axis = 0), np.concatenate([train_dev_lex[positive_type]["dev"][1] for positive_type in train_dev_lex.keys()], axis = 0)
         dev_type_lex = []
@@ -68,13 +77,13 @@ def load_data(classifier, iters):
         
         print(dev_x_nonlex.shape[0], dev_x_lex.shape[0])
 
- return layer2data, layer2projs
+ return layer2data, layer2projs, layer2ws
  
  
 
 def collect_vecs(classifier, iters, do_random_projection):
 
-    layer2data, layer2projs = load_data(classifier, iters)
+    layer2data, layer2projs, layer2ws = load_data(classifier, iters)
     
     vecs_lex, vecs_rowspace, labels = [],[], []
     vecs_rowspace_nonlex = []
@@ -90,10 +99,10 @@ def collect_vecs(classifier, iters, do_random_projection):
         type2vecs_rowspace = {}
         type2vecs_rowspace_nonlex = {}
         
-        for rc_type in ["src", "orc", "orrc", "prc", "prrc", "all"]:
+        for rc_type in ["src", "src_by", "orc", "orc_by", "orrc", "orrc_by", "orrc_that", "prc", "prrc", "prrc_that", "all"]:
         
             if do_random_projection:
-                w = np.random.rand(10, 768) - 0.5
+                w = np.random.rand(iters, 768) - 0.5
                 P_rowspace = debias.get_rowspace_projection(w)
                 assert np.allclose(P_rowspace.dot(P_rowspace) - P_rowspace, 0)
                 
@@ -114,6 +123,16 @@ def collect_vecs(classifier, iters, do_random_projection):
 
             type2vecs_rowspace[rc_type] = lex_x[mask_lex].dot(P_rowspace)
             type2vecs_rowspace_nonlex[rc_type] = nonlex_x[mask_nonlex].dot(P_rowspace)
+            #W = np.array(layer2ws[layer][rc_type][0]).squeeze(1)
+            #print(W.shape)
+            #W /= np.linalg.norm(W, keepdims = True, axis = 1)
+            #print(lex_x[mask_lex].shape, W.shape)
+            #exit()
+            #Q = np.abs((lex_x[mask_lex].dot(W.T)))*W
+            #print(Q.shape)
+            #exit()
+            #type2vecs_rowspace[rc_type] = np.abs((lex_x[mask_lex].dot(W)))*W
+            #type2vecs_rowspace_nonlex[rc_type] = np.abs(nonlex_x[mask_nonlex].dot(W))*W            
             
         layer2ttype2vecs_rowspace[layer] = type2vecs_rowspace
         layer2type2vecs_rowspace_nonlex[layer] = type2vecs_rowspace_nonlex
@@ -126,38 +145,42 @@ def collect_vecs(classifier, iters, do_random_projection):
 def calc_sims(layer2ttype2vecs_rowspace, layer2type2vecs_rowspace_nonlex, classifier, iters):
 
     
-    type2ind = {d:i for i,d in enumerate(layer2type2vecs_rowspace_nonlex["0"].keys())}
+    type2ind = {d:i for i,d in enumerate(layer2type2vecs_rowspace_nonlex["0"].keys()) if d != "all"}
     ind2type = {i:d for d,i in type2ind.items()}
+    
     layer2sims = dict()
     
     for layer in layer2ttype2vecs_rowspace.keys():
     
         type2vecs_rowspace, type2vecs_rowspace_nonlex =  layer2ttype2vecs_rowspace[layer], layer2type2vecs_rowspace_nonlex[layer]
-        sims = np.zeros((6,6))
+        sims = np.zeros((10,10))
     
         from sklearn.metrics.pairwise import cosine_similarity
 
-        for key, vecs in type2vecs_rowspace_nonlex.items(): #type2vecs_rowspace.items():
+        for key, vecs in type2vecs_rowspace.items():
             for key2, vecs2 in type2vecs_rowspace_nonlex.items():
 
-        
+                if key == "all" or key2 == "all": continue
+                
                 sims2 = cosine_similarity(vecs, vecs2)
                 sims[type2ind[key], type2ind[key2]] = np.mean(sims2) #mean1_normed.dot(mean2_normed.T)
                 
         layer2sims[layer] = sims
 
-    labels = [ind2type[i] for i in range(len(ind2type))]
+    labels = [ind2type[i].upper().replace("_","-") for i in range(len(ind2type))]
     for layer, sims in layer2sims.items():
+    
         df = pd.DataFrame(sims, index = labels, columns = labels)
         print("Layer {}".format(layer))
+
         print(df)
         print("========================================================")
 
-        plt.figure(figsize = (10,7))
-        sn.heatmap(df, annot=True)
-        plt.title("Cosine similarity in RC subspace between various RCs. {}. classifier: {}. {}".format(layer,classifier, iters))
+        plt.figure(figsize = (11,8))
+        sn.heatmap(df, annot=True, cmap = "YlGnBu", vmin = 0, vmax = 1)
+        #plt.title("Cosine similarity in RC subspace between various RCs. {}. classifier: {}. {}".format(layer,classifier, iters))
         #plt.show()
-        plt.savefig("../results/plots/rowspace-similarity.layer={}.classifier={}.iters={}.random_projection={}.png".format(layer, classifier, iters, do_random_projection), dpi=200)
+        plt.savefig("../results/plots/rowspace-similarity.layer={}.classifier={}.iters={}.random_projection={}.png".format(layer, classifier, iters, do_random_projection), dpi=300)
 
 
 
@@ -172,9 +195,9 @@ parser = argparse.ArgumentParser(description='test influence of INLP on agreemen
 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
 parser.add_argument('--classifier', dest='classifier', type=str,
-                        default="sgd-perceptron")
+                        default="sgd-log")
 parser.add_argument('--iters', dest='iters', type=int,
-                        default=16)                    
+                        default=8)                    
 parser.add_argument('--random-projection', dest='random_projection', type=int,
                         default=0)                                                                               
 args = parser.parse_args()

@@ -26,9 +26,10 @@ def forward_from_specific_layer(model, layer_number: int, layer_representation: 
     h = layer_representation
     states = []
 
-    for i, layer in enumerate(layers):
-        h = layer(h)[0] if i != len(layers) - 1 else layer(h)
-        states.append(h)
+    with torch.no_grad():
+        for i, layer in enumerate(layers):
+            h = layer(h)[0] if i != len(layers) - 1 else layer(h)
+            states.append(h)
 
     # states[-1] = states[-1].unsqueeze(0)
 
@@ -95,7 +96,7 @@ class BertEncoder(object):
 
         return (bert_tokens, orig_to_tok_map)
 
-    def encode(self, sentence: str, mask_index: int, layer: int, P: np.ndarray, P2: np.ndarray):
+    def encode(self, sentence: str, mask_index: int, layer: int, P: np.ndarray, P2: np.ndarray, alpha, ws, project=False):
 
         tokenized_text, orig2tok = self.tokenize(sentence.split(" "))
         #print(tokenized_text, mask_index, orig2tok)
@@ -112,16 +113,51 @@ class BertEncoder(object):
         rep_state = [outputs[1][i][0] for i in range(len(outputs[1]))]
         
         states = rep_state[layer]
-        states_projected = (states @ P).float()
-        if P2 is not None:
-            P_R = torch.eye(768).cuda() - P2
-            states_projected -= 2 * states @ P_R
+        #norm_original = torch.norm(states, dim = 1, keepdim = True)
+        
+        P_R = torch.eye(768).cuda() - P
+        if alpha >= -1e-4:
+            alpha_prime = alpha + 1
+        else:
+            alpha_prime = alpha
+        
+        states_projected = states.clone()
+        #states_projected[mask_idx_bert] = (states[mask_idx_bert] - (alpha_prime)*(states[mask_idx_bert]@P_R)).float()
+        
+         ### SELECTIVE-FLIPPING-START
+        if project:
+            states_projected[mask_idx_bert] = (states[mask_idx_bert] - states[mask_idx_bert]@P_R).float()  
+                
+            signs = torch.sign(states[mask_idx_bert]@ws.T)
+            if np.random.random() < 1/80: 
+                print(states[mask_idx_bert]@ws.T)
+                print("=========================================")
+            
+            for r, (s,w) in enumerate(zip(signs, ws)):
+                #if r > 4: continue
+            
+                proj = (states[mask_idx_bert]@w)*w
+                alpha_sign = 1 if alpha > 0 else -1
+                if alpha_sign < 0: #flip - make the projection positive (thinking your'e inside a RC)
+                    proj = -proj*np.abs(alpha) if s < 0 else proj*np.abs(alpha)
+                elif alpha_sign > 0: #enhance - make the projectio negative (thinking your'e outside of RC)
+                    proj = proj*np.abs(alpha) if s < 0 else -proj*np.abs(alpha)
+                
+                states_projected[mask_idx_bert] += proj               
+        ### SELECTIVE-FLIPPING-END 
+        
+     
+        
+        #norm_after = torch.norm(states_projected, dim = 1, keepdim = True)
+        #NORMALIZE = False
+        #if NORMALIZE:
+        #    states_projected = (states_projected/norm_after)*norm_original
              
         next_layers = forward_from_specific_layer(self.model, layer, states_projected.unsqueeze(0)).squeeze(1)
         last_after_batchnorm = next_layers[-1]
         vec = last_after_batchnorm[mask_idx_bert]
 
-        top_k = 1500
+        top_k = 500
         logits = np.dot(self.out_embed, vec)
         probs = torch.nn.functional.softmax(torch.tensor(logits), dim=-1)
         top_k_weights, top_k_indices = torch.topk(probs, top_k, sorted=True)
@@ -138,10 +174,11 @@ class BertEncoder(object):
         w = sentence.split(" ")[mask_index]
         #print(w, predictions_dict[w], "applying projection?", P2 is not None)
         #print("----------------------------")
-        return predictions_dict, vec, top_words, orig2tok, tokenized_text
+        top_k_weights = ['%.7f' % x for x in top_k_weights.detach().cpu().numpy()]
+        return predictions_dict, vec, top_words, top_k_weights, orig2tok, tokenized_text
 
 
-def collect_bert_states(bert, data: List[Tuple], layer=-1, P=None, P2=None):
+def collect_bert_states(bert, data: List[Tuple], layer=-1, P=None, P2=None, alpha=None,ws=None,project=False):
     data_with_states = []
 
     for i, d in enumerate(data):
@@ -150,21 +187,45 @@ def collect_bert_states(bert, data: List[Tuple], layer=-1, P=None, P2=None):
         word_position = d["verb_index"]
         correct, wrong = d["correct_verb"], d["wrong_verb"]
         
-        predictions_dict, vec, top_words, orig2tok, bert_tokens = bert.encode(sent, mask_index=word_position,
-                                                                              layer=layer, P=P, P2=P2)
+        predictions_dict, vec, top_words, top_probs, orig2tok, bert_tokens = bert.encode(sent, mask_index=word_position,
+                                                                              layer=layer, P=P, P2=P2, alpha = alpha,ws=ws,project=project)
 
-        dict_data = d.copy()
-        dict_data["vec"] = vec
-        dict_data["top_preds"] = top_words[:10]
+        dict_data = {} #d.copy()
+
+        dict_data["top_preds"] = list(zip(top_words[:10], top_probs[:10]))
+        #print(dict_data["top_preds"][:250])
+        #print("======================================")
+
+        
+        dict_data["sentence"] = sent
+        dict_data["correct_word"] = correct
+        dict_data["wrong_word"] = wrong
+        dict_data["verb_index"] = word_position
 
         if correct in predictions_dict:
-            dict_data["correct_word_prob"] = predictions_dict[correct]
+            dict_data["correct_word_prob"] = predictions_dict[correct]["prob"]
+            dict_data["correct_word_rank"] = predictions_dict[correct]["rank"]
         else:
             dict_data["correct_word_prob"] = None
+            dict_data["correct_word_rank"] = None
+            
         if wrong in predictions_dict:
-            dict_data["wrong_word_prob"] = predictions_dict[wrong]
+            dict_data["wrong_word_prob"] = predictions_dict[wrong]["prob"]
+            dict_data["wrong_word_rank"] = predictions_dict[wrong]["rank"]
         else:
             dict_data["wrong_word_prob"] = None
+            dict_data["wrong_word_rank"] = None
+        
+        if dict_data["correct_word_rank"] is not None and dict_data["wrong_word_rank"] is not None:
+        
+            dict_data["success"] = dict_data["correct_word_rank"] < dict_data["wrong_word_rank"]
+        
+        elif dict_data["correct_word_rank"] is not None and (dict_data["wrong_word_rank"] is None):
+        
+            dict_data["success"] = True
+        
+        else:
+            dict_data["success"] = False
 
         #print(dict_data)
         #print("------------------")

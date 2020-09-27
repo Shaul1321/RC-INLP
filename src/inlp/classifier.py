@@ -45,8 +45,8 @@ class SKlearnClassifier(Classifier):
         :param Y_dev:
         :return: accuracy score on the dev set / Person's R in the case of regression
         """
-
-        self.model.fit(X_train, Y_train)
+        
+        self.model.fit(X_train, Y_train)#, coef_init = np.zeros(768))
         score = self.model.score(X_dev, Y_dev)
         return score
 

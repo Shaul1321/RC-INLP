@@ -9,27 +9,33 @@ import tqdm
 
 class BertEncoder(object):
 
-    def __init__(self, device='cpu', model="bert", random=False):
+    def __init__(self, device='cpu', model="bert", random=False, use_roberta = False):
 
         # config = BertConfig.from_pretrained("bert-large-uncased-whole-word-masking", output_hidden_states=True)
         # self.tokenizer = BertTokenizer.from_pretrained('bert-large-uncased-whole-word-masking')
         # self.model = BertForMaskedLM.from_pretrained('bert-large-uncased-whole-word-masking', config = config)
 
-        config = BertConfig.from_pretrained("bert-base-uncased", output_hidden_states=True)
-        
-        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-        if not random:
-            self.model = BertForMaskedLM.from_pretrained('bert-base-uncased', config=config)
+        if not use_roberta:
+            config = BertConfig.from_pretrained("bert-base-uncased", output_hidden_states=True)
+            self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+            if not random:
+               self.model = BertForMaskedLM.from_pretrained('bert-base-uncased', config=config)
+            else:
+               self.model = BertForMaskedLM(config)
+            self.cls = "[CLS]"
+            self.sep = "[SEP]"
+            self.mask = "[MASK]"
+            self.final_transform = self.model.cls.predictions.transform
         else:
-            self.model = BertForMaskedLM(config)
-        # config = AlbertConfig.from_pretrained("albert-xlarge-v2", output_hidden_states=True)
-        # self.tokenizer = AlbertTokenizer.from_pretrained("albert-xlarge-v2")
-        # self.model = AlbertModel.from_pretrained("albert-xlarge-v2", config = config)
-        # config = RobertaConfig.from_pretrained("roberta-large", output_hidden_states=True)
-        # self.tokenizer = RobertaTokenizer.from_pretrained('roberta-large')
-        # self.model = RobertaModel.from_pretrained('roberta-large', config = config)
-
-        self.final_transform = self.model.cls.predictions.transform
+        
+            config = RobertaConfig.from_pretrained("roberta-base", output_hidden_states=True)
+            self.tokenizer = RobertaTokenizer.from_pretrained('roberta-base')
+            self.model = RobertaForMaskedLM.from_pretrained('roberta-base', config = config)
+            self.cls = "<s>"
+            self.sep = "</s>"
+            self.mask = "<mask>"        
+            self.final_transform = self.model.lm_head
+        
 
         self.model.eval()
         self.model.to(device)
@@ -46,7 +52,7 @@ class BertEncoder(object):
         orig_to_tok_map: An output dictionary consisting of a mapping (alignment) between indices in the original tokenized sentence, and indices in the sentence tokenized by the BERT tokenizer. See https://github.com/google-research/bert
         """
 
-        bert_tokens = ["[CLS]"]
+        bert_tokens = [self.cls]
         orig_to_tok_map = {}
         has_subwords = False
         is_subword = []
@@ -59,7 +65,7 @@ class BertEncoder(object):
 
             orig_to_tok_map[i] = len(bert_tokens) - 1
 
-        bert_tokens.append("[SEP]")
+        bert_tokens.append(self.sep)
         return (bert_tokens, orig_to_tok_map)
 
     def encode(self, sentence: str, layers: List[int], final_transform: bool = True, pos_ind=-1, mask_prob=1.0):
@@ -67,7 +73,7 @@ class BertEncoder(object):
         tokenized_text, orig2tok = self.tokenize(sentence.split(" "))
         pos_ind_bert = orig2tok[pos_ind]
         if np.random.random() < mask_prob:
-            tokenized_text[pos_ind_bert] = "[MASK]"
+            tokenized_text[pos_ind_bert] = self.mask
         indexed_tokens = self.tokenizer.convert_tokens_to_ids(tokenized_text)
         tokens_tensor = torch.tensor([indexed_tokens]).to(self.device)
 
