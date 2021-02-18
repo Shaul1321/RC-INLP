@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from transformers import BertTokenizer, BertModel, BertForMaskedLM, BertConfig, RobertaModel, RobertaForMaskedLM, \
     RobertaTokenizer, RobertaConfig
-from transformers import AutoTokenizer, AutoModel, AutoConfig
+from transformers import AutoTokenizer, AutoModel, AutoConfig, AutoModelForMaskedLM
 from transformers import AlbertTokenizer, AlbertModel, AlbertConfig
 from transformers import XLNetTokenizer, XLNetModel, XLNetConfig
 from collections import defaultdict
@@ -46,15 +46,21 @@ def forward_from_specific_layer(model, layer_number: int, layer_representation: 
 
 class BertEncoder(object):
 
-    def __init__(self, device='cpu'):
+    def __init__(self, device='cpu', model_type = "bert", model_str = "bert-base-uncased", dim = 768):
 
         # config = BertConfig.from_pretrained("bert-large-uncased-whole-word-masking", output_hidden_states=True)
         # self.tokenizer = BertTokenizer.from_pretrained('bert-large-uncased-whole-word-masking')
         # self.model = BertForMaskedLM.from_pretrained('bert-large-uncased-whole-word-masking', config = config)
-        config = BertConfig.from_pretrained("bert-base-uncased", output_hidden_states=True)
-        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-        self.model = BertForMaskedLM.from_pretrained('bert-base-uncased', config=config)
-
+        
+        if model_type == "bert":
+            config = BertConfig.from_pretrained(model_str, output_hidden_states=True)
+            self.tokenizer = BertTokenizer.from_pretrained(model_str)
+            self.model = BertForMaskedLM.from_pretrained(model_str, config=config)
+        elif model_type == "auto":
+                config = AutoConfig.from_pretrained(model_str, output_hidden_states=True)
+                self.tokenizer = AutoTokenizer.from_pretrained(model_str)
+                self.model = AutoModelForMaskedLM.from_pretrained(model_str, config = config)
+                
         # config = AlbertConfig.from_pretrained("albert-xlarge-v2", output_hidden_states=True)
         # self.tokenizer = AlbertTokenizer.from_pretrained("albert-xlarge-v2")
         # self.model = AlbertModel.from_pretrained("albert-xlarge-v2", config = config)
@@ -63,7 +69,7 @@ class BertEncoder(object):
         # self.model = RobertaModel.from_pretrained('roberta-large', config = config)
         self.final_transform = self.model.cls.predictions.transform
         self.out_embed = self.model.cls.predictions.decoder.weight.detach().cpu().numpy()
-
+        self.dim = dim
         self.model.eval()
         self.model.to(device)
         self.device = device
@@ -115,7 +121,7 @@ class BertEncoder(object):
         states = rep_state[layer]
         #norm_original = torch.norm(states, dim = 1, keepdim = True)
         
-        P_R = torch.eye(768).cuda() - P
+        P_R = torch.eye(self.dim).cuda() - P
         if alpha >= -1e-4:
             alpha_prime = alpha + 1
         else:
@@ -125,14 +131,29 @@ class BertEncoder(object):
         #states_projected[mask_idx_bert] = (states[mask_idx_bert] - (alpha_prime)*(states[mask_idx_bert]@P_R)).float()
         
          ### SELECTIVE-FLIPPING-START
+        
         if project:
+            signs = torch.sign(states[mask_idx_bert]@ws.T)
+            signs[signs > 0] = -1 # the verb is outside of the RC. we zero out cases where the classifier predicted otherwise.
+            signs[signs < 0] = 1
+            signs = signs.long()
+            relevant = ws[signs,:]
+            
+            proj = (states[mask_idx_bert]@ws.T)          
+            if alpha_prime > 0:           
+                proj = proj * signs
+            else:
+                proj = proj * (-signs)     
+            proj = proj@ws*np.abs(alpha_prime)
+
+            states_projected[mask_idx_bert] = (states[mask_idx_bert] - states[mask_idx_bert]@P_R).float()  
+            states_projected[mask_idx_bert]  = states_projected[mask_idx_bert] + proj
+            
+            """ 
             states_projected[mask_idx_bert] = (states[mask_idx_bert] - states[mask_idx_bert]@P_R).float()  
                 
-            signs = torch.sign(states[mask_idx_bert]@ws.T)
-            if np.random.random() < 1/80: 
-                print(states[mask_idx_bert]@ws.T)
-                print("=========================================")
-            
+            signs = torch.sign(states[mask_idx_bert]@ws.T) 
+        
             for r, (s,w) in enumerate(zip(signs, ws)):
                 #if r > 4: continue
             
@@ -143,24 +164,25 @@ class BertEncoder(object):
                 elif alpha_sign > 0: #enhance - make the projectio negative (thinking your'e outside of RC)
                     proj = proj*np.abs(alpha) if s < 0 else -proj*np.abs(alpha)
                 
-                states_projected[mask_idx_bert] += proj               
+                states_projected[mask_idx_bert] += proj 
+           """              
         ### SELECTIVE-FLIPPING-END 
         
-     
         
         #norm_after = torch.norm(states_projected, dim = 1, keepdim = True)
         #NORMALIZE = False
         #if NORMALIZE:
         #    states_projected = (states_projected/norm_after)*norm_original
-             
-        next_layers = forward_from_specific_layer(self.model, layer, states_projected.unsqueeze(0)).squeeze(1)
-        last_after_batchnorm = next_layers[-1]
-        vec = last_after_batchnorm[mask_idx_bert]
+        
+        with torch.no_grad():     
+            next_layers = forward_from_specific_layer(self.model, layer, states_projected.unsqueeze(0)).squeeze(1)
+            last_after_batchnorm = next_layers[-1]
+            vec = last_after_batchnorm[mask_idx_bert]
 
-        top_k = 500
-        logits = np.dot(self.out_embed, vec)
-        probs = torch.nn.functional.softmax(torch.tensor(logits), dim=-1)
-        top_k_weights, top_k_indices = torch.topk(probs, top_k, sorted=True)
+            top_k = 500
+            logits = np.dot(self.out_embed, vec)
+            probs = torch.nn.functional.softmax(torch.tensor(logits), dim=-1)
+            top_k_weights, top_k_indices = torch.topk(probs, top_k, sorted=True)
         top_words = self.tokenizer.convert_ids_to_tokens(top_k_indices)[:]
         predictions_dict = defaultdict(dict)
 
